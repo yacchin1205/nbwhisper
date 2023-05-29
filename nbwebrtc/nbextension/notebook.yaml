@@ -1,0 +1,20 @@
+Type: Jupyter Notebook Extension
+Name: NBWebRTC
+Section: notebook
+Description: Adds a feature for having voice chat and sharing screens
+Link: readme.md
+Main: main.js
+Compatibility: 6.x
+Parameters:
+- name: realtime_talk_skyway_api_token
+  description: An api token for SkyWay(*for old SkyWay). You need to use the same api key in your team. <a href="https://console-webrtc-free.ecl.ntt.com/users/login">SkyWay</a>.
+  input_type: text
+  default: ''
+- name: realtime_talk_room_mode_for_waiting_room
+  description: Room mode for waiting room. You can input "sfu" or "mesh". You need to use the same mode in your team.
+  input_type: text
+  default: 'sfu'
+- name: realtime_talk_room_mode_for_talking_room
+  description: Room mode for talking room. You can input "sfu" or "mesh". You need to use the same mode in your team.
+  input_type: text
+  default: 'mesh'

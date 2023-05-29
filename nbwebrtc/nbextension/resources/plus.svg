@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="20px" height="20px" viewBox="0 0 20 20" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>Icon</title>
+    <g id="■--Flow-(画面遷移)-" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="A030_通話中表示_全画面_メンバー@0.0.1" transform="translate(-980.000000, -632.000000)" fill="#FFFFFF">
+            <g id="Buttons/Filled" transform="translate(943.500000, 623.000000)">
+                <g id="Contents" transform="translate(34.816568, 7.000000)">
+                    <g id="Group" transform="translate(2.400000, 2.400000)">
+                        <rect id="Rectangle" x="0" y="8.4" width="19.2" height="2.4" rx="1.2"></rect>
+                        <path d="M1.2,8.4 L18,8.4 C18.6627417,8.4 19.2,8.9372583 19.2,9.6 C19.2,10.2627417 18.6627417,10.8 18,10.8 L1.2,10.8 C0.5372583,10.8 8.11624501e-17,10.2627417 0,9.6 C-8.11624501e-17,8.9372583 0.5372583,8.4 1.2,8.4 Z" id="Rectangle-Copy" transform="translate(9.600000, 9.600000) rotate(90.000000) translate(-9.600000, -9.600000) "></path>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>
