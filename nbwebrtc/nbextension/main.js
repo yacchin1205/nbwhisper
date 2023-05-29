@@ -4,24 +4,47 @@ define([
     'require',
     'base/js/events',
     'base/js/utils',
-], function(Jupyter, $, requirejs, events, configmod, utils) {
+], function(Jupyter, $, requirejs, events, utils) {
     "use strict";
 
-    // デバッグモードか(consoleが無効化されます)
-    const DEBUG = true;
+    const logPrefix = '[nbwebrtc]';
 
-    var params = {
-        realtime_talk_skyway_api_token: '',
-        realtime_talk_room_mode_for_waiting_room: 'sfu',
-        realtime_talk_room_mode_for_talking_room: 'mesh'
+    const params = {
+        nbwebrtc_skyway_api_token: '',
+        nbwebrtc_room_mode_for_waiting_room: '',
+        nbwebrtc_room_mode_for_talking_room: ''
     };
 
-    var update_params = function() {
-        var config = Jupyter.notebook.config;
-        for(var key in params) {
+    const configure = async function() {
+        // Apply server settings
+        const server_config = await load_server_config();
+        if (!server_config.username) {
+            throw new Error('Username not detected');
+        }
+        own_user_name = own_user.name = server_config.username
+        for(const key_ in params) {
+            const m = key_.match(/^nbwebrtc_(.+)$/);
+            const key = m[1];
+            const value = server_config[key];
+            if (!value) {
+                console.log(logPrefix, "param " + key + " is not set on server config");
+                continue;
+            }
+            console.log(logPrefix, "param = " + key + " value = " + value + " on server config");
+            params[key_] = value;
+        }
+
+        // Apply client settings
+        const config = Jupyter.notebook.config;
+        for(const key in params) {
             if(config.data.hasOwnProperty(key)) {
-                console.log("param = " + key + " value = " + config.data[key]);
-                params[key] = config.data[key];
+                const value = config.data[key];
+                if (!value) {
+                    console.log(logPrefix, "param " + key + " is not set");
+                    continue;
+                }
+                console.log(logPrefix, "param = " + key + " value = " + value);
+                params[key] = value;
             }
         }
     }
@@ -81,7 +104,14 @@ define([
     // 自身のユーザー情報及び他のユーザーのリスト
     // 前回との差分を取って変化があった時テーブルを更新したいため、保持しておく
     // name: 名前, is_mute: ミュートか, is_sharing_display: 画面共有中か, peer_id: PeerId, joining_room: 参加中のルーム, invited_rooms: 招待されている部屋
-    var own_user = null;
+    var own_user = {
+        name : "",
+        is_mute : false,
+        is_sharing_display : false,
+        peer_id: null,
+        joining_room : "",
+        invited_rooms : []
+    };
     // 全ユーザー情報
     // peer_id, joining_roomは複数存在する
     // name: 名前, is_mute: ミュートか, is_sharing_display: 画面共有中か, peer_id_to_joining_rooms: peer_idとjoining_roomの連想配列, invited_rooms: 招待されている部屋
@@ -148,7 +178,7 @@ define([
     }
 
     // ランダムでuuidを生成する
-    var generateUuid = function() {
+    const generate_uuid = function() {
         // https://github.com/GoogleChrome/chrome-platform-analytics/blob/master/src/internal/identifier.js
         // const FORMAT: string = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
         let chars = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".split("");
@@ -165,109 +195,28 @@ define([
         return chars.join("");
     }
 
-    // テキストを ' で囲む
-    var surround_quote = function(text) {
-        return "'" + text + "'";
-    }
-
-    // 連想配列の値の配列を取得する
-    var get_values = function(dict) {
-        let ret = [];
-        for(let key in dict) {
-            ret.push(dict[key]);
-        }
-        return ret;
-    }
-
     // 非同期メソッドを同期かつ排他で実行する
     var is_busy_in_process = false;
     var invoke_async_process = function(func) {
         if(is_busy_in_process) return;
-        console.log("process start.");
+        console.log(logPrefix, "process start.");
         is_busy_in_process = true;
         func().then(() => {
             is_busy_in_process = false;
-            console.log("process end.");
+            console.log(logPrefix, "process end.");
         });
     }
 
-    // jsの設置されているアドレスを取得
-    var get_js_url = function() {
-        var root;
-        var scripts = document.getElementsByTagName("script");
-        var i = scripts.length;
-        while (i--) {
-            // https://nii.entap.works/user/admin/nbextensions/webrtc_addition/main.js?v=20230315090246
-            var match = scripts[i].src.match(/(^|.*\/)webrtc_addition\/main\.js[0-9a-zA-Z=?]*$/);
-            if (match) {
-                root = match[1] + "webrtc_addition/"
-                break;
-            }
-        }
-        return root;
-    };
-
-    // pythonを実行する
-    var pyexec = function(command, callback) {
-        Jupyter.notebook.kernel.execute(
-            command,
-            {iopub: {
-                output: function(out) {
-                    callback(out.content.text);
-                }
-            }},
-            {
-                silent: false
-            });
-    }
-
-    var pyexec_async = function(command) {
-        return new Promise(function(resolve) {
-            pyexec(command, function(ret) {
-                resolve(ret);
-            });
-        });
-    }
-
-    var get_pycommand_from_file = function(file_name, callback) {
-        let path = Jupyter.notebook.base_url + "nbextensions/realtime_talk/" + file_name;
-        $.get(path).done(function(data) {
-            callback(data);
-        });
-    }
-
-    var get_pycommand_from_file_async = function(file_name) {
-        return new Promise(function(resolve) {
-            get_pycommand_from_file(file_name, function(data) {
+    const load_server_config = function() {
+        return new Promise(function(resolve, reject) {
+            const path = Jupyter.notebook.base_url + "nbwebrtc/v1/config";
+            $.get(path).done(function(data) {
+                console.log(logPrefix, 'config', data);
                 resolve(data);
+            }).fail(function(xhr, status, error) {
+                reject(error);
             });
         });
-    }
-
-    var get_user_name_async = async function() {
-        let command = await get_pycommand_from_file_async("get_user_name.py");
-        let ret = await pyexec_async(command);
-        if(ret == null) return "";
-        return ret.replace(/\n/g, "");
-    }
-
-    // 拡張子を含まないファイル名を取得
-    var base_file_name = function(path) {
-        let file_name = path.substring(path.lastIndexOf("/") + 1);
-        if(file_name.lastIndexOf(".") >= 0) {
-            file_name = file_name.substring(0, file_name.lastIndexOf("."));
-        }
-        return file_name;
-    }
-
-    // 拡張子を取得
-    var file_extension = function(path) {
-        let file_name = path.substring(path.lastIndexOf("/") + 1);
-        let extension = "";
-        if(file_name.lastIndexOf(".") >= 0) {
-            extension = file_name.substring(file_name.lastIndexOf(".") + 1);
-        }
-        return extension;
     }
 
     // ダミーの映像ストリーム用キャンバスの作成
@@ -430,14 +379,14 @@ define([
         if(local_stream != null) {
             let track = local_stream.getAudioTracks()[0] 
             if(track != null) {
-                console.log("local_stream 音声のミュート状態変更 -> " + mute);
+                console.log(logPrefix, "local_stream 音声のミュート状態変更 -> " + mute);
                 track.enabled = !mute;
             }
         }
         if(display_stream != null) {
             let track = display_stream.getAudioTracks()[0] 
             if(track != null) {
-                console.log("display_stream 音声のミュート状態変更 -> " + mute);
+                console.log(logPrefix, "display_stream 音声のミュート状態変更 -> " + mute);
                 track.enabled = !mute;
             }
         }
@@ -546,8 +495,8 @@ define([
             return new_stream;
         }
         catch(err) {
-            console.log("start_share_display_async error:");
-            console.log(err);
+            console.error(logPrefix, "start_share_display_async error:");
+            console.error(logPrefix, err);
             return null;
         }
     }
@@ -771,69 +720,72 @@ define([
             return new MediaStream([video_track, audio_track]);
         }
         catch(err) {
-            console.log("navigator.mediaDevices.getUserMedia error:");
-            console.log(err);
+            console.error(logPrefix, "navigator.mediaDevices.getUserMedia error:");
+            console.error(logPrefix, err);
             return null;
         }
     }
 
     // Peerをセットアップする
-    var setup_peer = function() {
-        peer = null;
-        try {
-            let _peer = new Peer({
-                key: params.realtime_talk_skyway_api_token,
-                debug: 3
-            });
+    const setup_peer = function() {
+        return new Promise(function(resolve, reject) {
+            peer = null;
+            own_user.peer_id = null;
+            try {
+                let _peer = new Peer({
+                    key: params.nbwebrtc_skyway_api_token,
+                    debug: 3
+                });
 
-            _peer.once("open", function(peer_id) {
-                console.log("peer opened, id = " + peer_id);
-                peer = _peer;
-            });
+                _peer.once("open", function(peer_id) {
+                    console.log(logPrefix, "peer opened, id = " + peer_id);
+                    peer = _peer;
+                    own_user.peer_id = _peer.id;
+                    resolve(peer);
+                });
 
-            _peer.once("error", function(err) {
-                console.log("peer error.");
-                console.log(err);
-                alert("RealtimeTalkに不明なエラーが発生しました。このページを再読み込みしてください。");
-            });
-
-            return null;
-        }
-        catch(e) {
-            console.log(e);
-            // e = Error: API KEY "..." is invalidの場合はその旨をエラーとして表示する
-            if(e.toString().match(/^.*API\sKEY.*is\sinvalid.*$/g)) {
-                return "RealtimeTalkのAPIキーの設定が間違っています。設定を見直してNotebookを開き直してください。";
-            } else {
-                // その他のエラー
-                return "RealtimeTalkの初期化に失敗しました。設定またはネットワークを見直してページを開き直してください。";
+                _peer.once("error", function(err) {
+                    console.error(logPrefix, "peer error.");
+                    console.error(logPrefix, err);
+                    reject(new Error("NBWebRTCに不明なエラーが発生しました。このページを再読み込みしてください。(" + err + ")"));
+                });
             }
-        }
+            catch(e) {
+                console.error(logPrefix, e);
+                // e = Error: API KEY "..." is invalidの場合はその旨をエラーとして表示する
+                if(e.toString().match(/^.*API\sKEY.*is\sinvalid.*$/g)) {
+                    reject(new Error("NBWebRTCのAPIキーの設定が間違っています。設定を見直してNotebookを開き直してください。(" + e.toString() + ")"));
+                } else {
+                    // その他のエラー
+                    reject(new Error("NBWebRTCの初期化に失敗しました。設定またはネットワークを見直してページを開き直してください。(" + e.toString() + ")"));
+                }
+            }
+        });
     }
 
     // 会話ルームに入る
     var join_talking_room = function(room_name) {
         talking_room = peer.joinRoom(room_name, {
-            mode: params.realtime_talk_room_mode_for_talking_room,
+            mode: params.nbwebrtc_room_mode_for_talking_room,
             stream: local_stream
         });
         if(talking_room == null) {
-            console.log("cannot create talking room...");
+            console.log(logPrefix, "cannot create talking room...");
             return;
         }
 
         talking_room.once("open", function() {
-            console.log("room open")
+            console.log(logPrefix, "room open")
             // room_openを他のメンバーに通知する
             send_message_to_talking_room(UPDATE_USER_DATA_MESSAGE);
         });
 
         talking_room.on("peerJoin", function(peer_id) {
-            console.log("peer joined to room: " + peer_id);
+            console.log(logPrefix, "peer joined to room: " + peer_id);
         });
 
         talking_room.on("peerLeave", function(peer_id) {
-            console.log("peer left from room: " + peer_id);
+            console.log(logPrefix, "peer left from room: " + peer_id);
             // ビデオタグを削除
             let video = null;
             for(let v of $("#"+TALK_SCREEN_REMOTE_VIDEOS_CONTAINER_ID).children()) {
@@ -846,7 +798,7 @@ define([
                 video.srcObject.getTracks().forEach(t => t.stop());
                 video.srcObject = null;
                 $(video).remove();
-                console.log("removed video");
+                console.log(logPrefix, "removed video");
             }
             // ルーム情報削除
             for(let user of other_users) {
@@ -858,7 +810,7 @@ define([
         });
 
         talking_room.on("stream", async function(stream) {
-            console.log("stream received in room: " + stream.peerId);
+            console.log(logPrefix, "stream received in room: " + stream.peerId);
             // ストリームを再生するvideoを追加する
             let new_video = $("<video>")
                 .attr("playsinline", "")
@@ -874,8 +826,8 @@ define([
             if(data == null) return;
             let message_obj = JSON.parse(data.data);
             let peer_id = data.src;
-            console.log("meesage from: " + peer_id);
-            console.log(message_obj);
+            console.log(logPrefix, "meesage from: " + peer_id);
+            console.log(logPrefix, message_obj);
 
             if(message_obj.message == UPDATE_USER_DATA_MESSAGE || message_obj.message == UPDATE_USER_DATA_RESPONSE_MESSAGE) {
                 if(message_obj.message == UPDATE_USER_DATA_MESSAGE) {
@@ -978,7 +930,7 @@ define([
         });
 
         talking_room.on("close", function() {
-            console.log("I left from room.");
+            console.log(logPrefix, "I left from room.");
 
             // 全てのビデオを閉じる
             for(let video of $("#"+TALK_SCREEN_REMOTE_VIDEOS_CONTAINER_ID).children()) {
@@ -1082,7 +1034,7 @@ define([
 
     // ルーム名を新規作成する
     var create_room_name = function() {
-        return "room_" + generateUuid();
+        return "room_" + generate_uuid();
     }
 
     // ユーザーをルームに招待する
@@ -1163,19 +1115,19 @@ define([
     var process_hung_up_button = function() {
         if(talking_room != null) {
             // 会話ルームから出る
-            console.log("leave talking room...");
+            console.log(logPrefix, "leave talking room...");
             talking_room.close();
             talking_room = null;
         }
         if(local_stream != null) {
             // ローカルストリームを閉じる
-            console.log("close local stream...");
+            console.log(logPrefix, "close local stream...");
             local_stream.getTracks().forEach(t => t.stop());
             local_stream = null;
         }
         if(display_stream != null) {
             // ディスプレイストリームを閉じる
-            console.log("close display stream...");
+            console.log(logPrefix, "close display stream...");
             display_stream.getTracks().forEach(t => t.stop());
             display_stream = null;
         }
@@ -1254,7 +1206,7 @@ define([
 
     // テーブルの更新
     var update_tables = function() {
-        console.log("update tables.")
+        console.log(logPrefix, "update tables.")
         // 自身の部屋以外のユーザーを表示するテーブル
         let out_users_tables = [$("#"+USERS_TABLE_ID), $("#"+TALK_SCREEN_USERS_TABLE_ID)];
         // テーブルをクリア -> 少なくともChromeではスクロールは勝手に巻き戻らないので大丈夫そう。
@@ -1773,24 +1725,24 @@ define([
     // 待機ルームに入る
     var join_waiting_room = function(room_name) {
         waiting_room = peer.joinRoom(room_name, {
-            mode: params.realtime_talk_room_mode_for_waiting_room
+            mode: params.nbwebrtc_room_mode_for_waiting_room
         });
         if(waiting_room == null) {
-            console.log("cannot create room...");
+            console.log(logPrefix, "cannot create room...");
         }
 
         waiting_room.once("open", function() {
-            console.log("waiting room open")
+            console.log(logPrefix, "waiting room open")
             // メンバーにユーザー情報を送信
             send_message_to_waiting_room(UPDATE_USER_DATA_MESSAGE);
         });
 
         waiting_room.on("peerJoin", function(peer_id) {
-            console.log("waiting peer joined to room: " + peer_id);
+            console.log(logPrefix, "waiting peer joined to room: " + peer_id);
         });
 
         waiting_room.on("peerLeave", function(peer_id) {
-            console.log("waiting peer left from room: " + peer_id);
+            console.log(logPrefix, "waiting peer left from room: " + peer_id);
             // このpeer_idに限らず、ルームに参加していないpeer_idは全て削除する。
             // ユーザー更新
             for(let temp_peer_id in own_other_peer_id_to_joining_rooms) {
@@ -1816,8 +1768,8 @@ define([
             if(data == null) return;
             let message_obj = JSON.parse(data.data);
             let peer_id = data.src;
-            console.log("waiting meesage from: " + peer_id);
-            console.log(message_obj);
+            console.log(logPrefix, "waiting meesage from: " + peer_id);
+            console.log(logPrefix, message_obj);
 
             if(message_obj.message == UPDATE_USER_DATA_MESSAGE || message_obj.message == UPDATE_USER_DATA_RESPONSE_MESSAGE) {
                 if(message_obj.message == UPDATE_USER_DATA_MESSAGE) {
@@ -1834,7 +1786,7 @@ define([
                     // 自分への招待ではない
                     return;
                 }
-                console.log("invited room: " + message_obj.room_name + " from: " + message_obj.user_name);
+                console.log(logPrefix, "invited room: " + message_obj.room_name + " from: " + message_obj.user_name);
                 own_user.invited_rooms.push(message_obj.room_name);
                 // データ更新を送信
                 send_message_to_waiting_room(UPDATE_USER_DATA_MESSAGE);
@@ -1851,10 +1803,10 @@ define([
         });
 
         waiting_room.on("close", function() {
-            console.log("I left from waiting room.");
+            console.log(logPrefix, "I left from waiting room.");
             if(!is_page_unloading) {
                 // ページアンロード中以外でここに来たらアラート
-                alert("RealtimeTalkの接続が切断されました。このページを再読み込みしてください。");
+                alert("NBWebRTCの接続が切断されました。このページを再読み込みしてください。");
             }
         });
     }
@@ -1906,7 +1858,7 @@ define([
             }, 1);
         } else {
             // キューがなくなったら何もしない
-            console.log("process_invitations_queue has finished.");
+            console.log(logPrefix, "process_invitations_queue has finished.");
             is_processing_invitaions_queue = false;
         }
     }
@@ -1966,64 +1918,29 @@ define([
         }
     }
 
-    // カーネルの初期化
-    var is_kernel_initted = false;
-    var kernel_init = async function () {
-        if(is_kernel_initted) return;
-        is_kernel_initted = true;
-
-        // ユーザー名取得
-        own_user_name = await get_user_name_async() ?? "";
-        // user名は linuxユーザーで使える文字が 英数字 及び -, _, $ なのでpythonとのやり取りは問題ないだろう
-        console.log("own user_name = " + own_user_name);
-
-        // ユーザー情報更新
-        own_user.name = own_user_name;
-
+    // 参加する
+    const join = function () {
         // 待機ルームに入る
-        let waiting_room_name = get_waiting_room_name();
-        console.log("待機ルーム: " + waiting_room_name);
+        const waiting_room_name = get_waiting_room_name();
+        console.log(logPrefix, "待機ルーム: " + waiting_room_name);
         join_waiting_room(waiting_room_name);
     }
 
     // 初期化前処理
-    var pre_initialize = async function() {
+    const pre_initialize = async function() {
         // パラメータ初期化
-        update_params();
+        await configure();
         // Peerを作成する
-        let ret = setup_peer();
-        if(ret != null) {
-            alert(ret);
-            return;
+        try {
+            await setup_peer();
+        } catch(e) {
+            alert(e.toString());
+            throw e;
         }
-        // Peerの起動まで最大10s待機する
-        let start_time = performance.now();
-        const exec_initialize = function() {
-            if(performance.now() - start_time > 10 * 1000) {
-                alert("RealtimeTalkの初期化に失敗しました。このページを再読み込みしてください。");
-                return;
-            }
-            if(peer != null) {
-                initialize();
-            } else {
-                setTimeout(exec_initialize, 100);
-            }
-        }
-        exec_initialize();
     }
         
     // 初期化
-    var initialize = function() {
-        // ユーザー情報新規作成
-        own_user = {
-            name : "",
-            is_mute : false,
-            is_sharing_display : false,
-            peer_id : peer.id,
-            joining_room : "",
-            invited_rooms : []
-        }
-
+    const initialize_panel = function() {
         $("<div>").attr("id", ELEMENT_ID).appendTo($(document.body));
 
         // ユーザーリスト表示ボタン
@@ -2086,71 +2003,53 @@ define([
         create_dummy_video_canvas()
             .attr("id", DUMMY_VIDEO_CANVAS_ID)
             .appendTo($("#"+ELEMENT_ID));
-
-        // If a kernel is available, 
-        if (typeof Jupyter.notebook.kernel !== "undefined" && Jupyter.notebook.kernel !== null) {
-            console.log("Kernel is available")
-            kernel_init();
-        }
-        // if a kernel wasn't available, we still wait for one. Anyway, we will run this for new kernel 
-        // (test if is is a Python kernel and initialize)
-        // on kernel_ready.Kernel, a new kernel has been started and we shall initialize the extension
-        events.on("kernel_ready.Kernel", function(evt, data) {
-            console.log("Kernel is available");
-            kernel_init();
-        });
     }
 
-    var load_extension = async function() {
-        if(!DEBUG) {
-            // console.logを無効化する
-            if(!window.console) {
-                window.console = {};
-            }
-            for(let method of ["log", "debug", "warn", "info", "error"]) {
-                console[method] = function(){};
-            }
-        }
-
-        console.log("RealtimeTalk start.");
+    const load_extension = async function() {
+        console.log(logPrefix, "NBWebRTC starting...");
         load_css('./main.css');
         Peer = await load_js_async("https://cdn.webrtc.ecl.ntt.com/skyway-4.4.5.min.js");
-        pre_initialize();
+        await pre_initialize();
+        initialize_panel();
+
+        join();
+        console.log(logPrefix, "NBWebRTC started.");
     };
 
     // ページ離脱時
     $(window).on('beforeunload', function() {
-        console.log("page is closed.")
+        console.log(logPrefix, "page is closed.")
         is_page_unloading = true;
         if(talking_room != null) {
             // 会話ルームから出る
-            console.log("leave talking room...");
+            console.log(logPrefix, "leave talking room...");
             talking_room.close();
             talking_room = null;
         }
         if(local_stream != null) {
             // ローカルストリームを閉じる
-            console.log("close local stream...");
+            console.log(logPrefix, "close local stream...");
             local_stream.getTracks().forEach(t => t.stop());
             local_stream = null;
         }
         if(display_stream != null) {
             // ディスプレイストリームを閉じる
-            console.log("close display stream...");
+            console.log(logPrefix, "close display stream...");
             display_stream.getTracks().forEach(t => t.stop());
             display_stream = null;
         }
         if(waiting_room != null) {
             // 待機ルームから出る
-            console.log("leave talking room...");
+            console.log(logPrefix, "leave talking room...");
             waiting_room.close();
             waiting_room = null;
         }
         if(peer != null) {
             // peerを閉じる
-            console.log("destory peer...");
+            console.log(logPrefix, "destory peer...");
             peer.destroy();
             peer = null;
+            own_user.peer_id = null;
         }
     });
 

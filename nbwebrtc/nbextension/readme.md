@@ -1,4 +1,4 @@
-## RealtimeTalk
+## NBWebRTC
 This nbextension allows using WebRTC in your blowser. You can talk with your voice and share your blowser tab you are editting by WebRTC. WebRTC services are offered by SkyWay.
 ### SkyWay Website
 https://skyway.ntt.com/ja/
