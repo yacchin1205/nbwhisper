@@ -5,11 +5,11 @@ from tornado import gen
 from .v1.handlers import (
     ConfigHandler
 )
-from .config import NBWebRTC
+from .config import NBWhisper
 
 
 def get_api_handlers(parent_app, base_dir):
-    config = NBWebRTC(parent=parent_app)
+    config = NBWhisper(parent=parent_app)
     handler_settings = {}
     handler_settings['config'] = config
 
@@ -22,7 +22,7 @@ def register_routes(nb_server_app, web_app):
     api_handlers = get_api_handlers(nb_server_app, nb_server_app.notebook_dir)
 
     host_pattern = '.*$'
-    handlers = [(url_path_join(web_app.settings['base_url'], 'nbwebrtc', path),
+    handlers = [(url_path_join(web_app.settings['base_url'], 'nbwhisper', path),
                  handler,
                  options)
                 for path, handler, options in api_handlers]

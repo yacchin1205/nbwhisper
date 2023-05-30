@@ -7,12 +7,12 @@ define([
 ], function(Jupyter, $, requirejs, events, utils) {
     "use strict";
 
-    const logPrefix = '[nbwebrtc]';
+    const logPrefix = '[nbwhisper]';
 
     const params = {
-        nbwebrtc_skyway_api_token: '',
-        nbwebrtc_room_mode_for_waiting_room: '',
-        nbwebrtc_room_mode_for_talking_room: ''
+        nbwhisper_skyway_api_token: '',
+        nbwhisper_room_mode_for_waiting_room: '',
+        nbwhisper_room_mode_for_talking_room: ''
     };
 
     const configure = async function() {
@@ -23,7 +23,7 @@ define([
         }
         own_user_name = own_user.name = server_config.username
         for(const key_ in params) {
-            const m = key_.match(/^nbwebrtc_(.+)$/);
+            const m = key_.match(/^nbwhisper_(.+)$/);
             const key = m[1];
             const value = server_config[key];
             if (!value) {
@@ -209,7 +209,7 @@ define([
 
     const load_server_config = function() {
         return new Promise(function(resolve, reject) {
-            const path = Jupyter.notebook.base_url + "nbwebrtc/v1/config";
+            const path = Jupyter.notebook.base_url + "nbwhisper/v1/config";
             $.get(path).done(function(data) {
                 console.log(logPrefix, 'config', data);
                 resolve(data);
@@ -733,7 +733,7 @@ define([
             own_user.peer_id = null;
             try {
                 let _peer = new Peer({
-                    key: params.nbwebrtc_skyway_api_token,
+                    key: params.nbwhisper_skyway_api_token,
                     debug: 3
                 });
 
@@ -747,17 +747,17 @@ define([
                 _peer.once("error", function(err) {
                     console.error(logPrefix, "peer error.");
                     console.error(logPrefix, err);
-                    reject(new Error("NBWebRTCに不明なエラーが発生しました。このページを再読み込みしてください。(" + err + ")"));
+                    reject(new Error("NBWhisperに不明なエラーが発生しました。このページを再読み込みしてください。(" + err + ")"));
                 });
             }
             catch(e) {
                 console.error(logPrefix, e);
                 // e = Error: API KEY "..." is invalidの場合はその旨をエラーとして表示する
                 if(e.toString().match(/^.*API\sKEY.*is\sinvalid.*$/g)) {
-                    reject(new Error("NBWebRTCのAPIキーの設定が間違っています。設定を見直してNotebookを開き直してください。(" + e.toString() + ")"));
+                    reject(new Error("NBWhisperのAPIキーの設定が間違っています。設定を見直してNotebookを開き直してください。(" + e.toString() + ")"));
                 } else {
                     // その他のエラー
-                    reject(new Error("NBWebRTCの初期化に失敗しました。設定またはネットワークを見直してページを開き直してください。(" + e.toString() + ")"));
+                    reject(new Error("NBWhisperの初期化に失敗しました。設定またはネットワークを見直してページを開き直してください。(" + e.toString() + ")"));
                 }
             }
         });
@@ -766,7 +766,7 @@ define([
     // 会話ルームに入る
     var join_talking_room = function(room_name) {
         talking_room = peer.joinRoom(room_name, {
-            mode: params.nbwebrtc_room_mode_for_talking_room,
+            mode: params.nbwhisper_room_mode_for_talking_room,
             stream: local_stream
         });
         if(talking_room == null) {
@@ -1725,7 +1725,7 @@ define([
     // 待機ルームに入る
     var join_waiting_room = function(room_name) {
         waiting_room = peer.joinRoom(room_name, {
-            mode: params.nbwebrtc_room_mode_for_waiting_room
+            mode: params.nbwhisper_room_mode_for_waiting_room
         });
         if(waiting_room == null) {
             console.log(logPrefix, "cannot create room...");
@@ -1806,7 +1806,7 @@ define([
             console.log(logPrefix, "I left from waiting room.");
             if(!is_page_unloading) {
                 // ページアンロード中以外でここに来たらアラート
-                alert("NBWebRTCの接続が切断されました。このページを再読み込みしてください。");
+                alert("NBWhisperの接続が切断されました。このページを再読み込みしてください。");
             }
         });
     }
@@ -2006,14 +2006,14 @@ define([
     }
 
     const load_extension = async function() {
-        console.log(logPrefix, "NBWebRTC starting...");
+        console.log(logPrefix, "NBWhisper starting...");
         load_css('./main.css');
         Peer = await load_js_async("https://cdn.webrtc.ecl.ntt.com/skyway-4.4.5.min.js");
         await pre_initialize();
         initialize_panel();
 
         join();
-        console.log(logPrefix, "NBWebRTC started.");
+        console.log(logPrefix, "NBWhisper started.");
     };
 
     // ページ離脱時

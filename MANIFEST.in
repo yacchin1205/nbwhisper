@@ -1,2 +1,2 @@
-include nbwebrtc/nbextension/*
-include nbwebrtc/nbextension/resources/*
+include nbwhisper/nbextension/*
+include nbwhisper/nbextension/resources/*

@@ -1,14 +1,14 @@
-FROM niicloudoperation/notebook:latest
+FROM yacchin1205/notebook:fix_remove-workaround-8ce24bc
 
 USER root
 
-COPY . /tmp/nbwebrtc
-RUN pip install /tmp/nbwebrtc && \
-    jupyter nbclassic-extension install --py nbwebrtc --sys-prefix && \
-    jupyter nbclassic-serverextension enable --py nbwebrtc --sys-prefix && \
-    jupyter nbclassic-extension enable --py nbwebrtc --sys-prefix
+COPY . /tmp/nbwhisper
+RUN pip install /tmp/nbwhisper && \
+    jupyter nbclassic-extension install --py nbwhisper --sys-prefix && \
+    jupyter nbclassic-serverextension enable --py nbwhisper --sys-prefix && \
+    jupyter nbclassic-extension enable --py nbwhisper --sys-prefix
 
 # Configuration for Server Proxy
-RUN cat /tmp/nbwebrtc/example/jupyter_notebook_config.py >> $CONDA_DIR/etc/jupyter/jupyter_notebook_config.py
+RUN cat /tmp/nbwhisper/example/jupyter_notebook_config.py >> $CONDA_DIR/etc/jupyter/jupyter_notebook_config.py
 
 USER $NB_UID

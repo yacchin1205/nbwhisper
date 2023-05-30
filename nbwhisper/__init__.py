@@ -1,4 +1,4 @@
-"""The NBWebRTC Server"""
+"""The NBWhisper Server"""
 
 import os
 from . import (
@@ -15,11 +15,11 @@ def load_jupyter_server_extension(nb_server_app):
 def _jupyter_nbextension_paths():
     notebook_ext = dict(section='notebook',
                         src='nbextension',
-                        dest='nbwebrtc',
-                        require='nbwebrtc/main')
+                        dest='nbwhisper',
+                        require='nbwhisper/main')
     return [notebook_ext]
 
 
 # server extension
 def _jupyter_server_extension_paths():
-    return [dict(module='nbwebrtc')]
+    return [dict(module='nbwhisper')]

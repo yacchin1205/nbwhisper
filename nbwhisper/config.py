@@ -2,7 +2,7 @@ from traitlets import Unicode
 from traitlets.config.configurable import Configurable
 
 
-class NBWebRTC(Configurable):
+class NBWhisper(Configurable):
 
     skyway_api_token = Unicode(
         '',
