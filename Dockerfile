@@ -1,4 +1,4 @@
-FROM yacchin1205/notebook:fix_remove-workaround-8ce24bc
+FROM niicloudoperation/notebook:latest
 
 USER root
 
