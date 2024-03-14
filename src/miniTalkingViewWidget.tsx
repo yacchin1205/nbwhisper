@@ -55,7 +55,7 @@ export class MiniTalkingViewWidget extends ReactWidget {
                 <div className='nbwhisper-mini-talking-view-button-palette'>
                     <div className='nbwhisper-mini-talking-view-buttons'>
                         {
-                            this._ownUser.is_mute ?
+                            this._ownUser.isMute() ?
                             <div className='nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-mute-off-button' 
                                 onClick={() => this._setMute(false)} />
                             :
@@ -63,7 +63,7 @@ export class MiniTalkingViewWidget extends ReactWidget {
                                 onClick={() => this._setMute(true)} />                            
                         }
                         {
-                            this._ownUser.is_sharing_display &&
+                            this._ownUser.isSharingDisplay() &&
                             <div className='nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-display-off-button'
                                 onClick={() => this._setSharingDisplay(false)} />
                         }

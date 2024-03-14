@@ -6,7 +6,7 @@ import {
 import { requestAPI } from './handler';
 import { WaitingUserListWidget } from './waitingUserListWidget';
 import { Widget } from '@lumino/widgets';
-import { ConnectionInfo, User } from './user';
+import { Client, User } from './user';
 import { UserState } from './userState';
 import { TalkingViewWidget } from './talkingViewWidget';
 import { DialogWidget } from './dialogWidget';
@@ -113,8 +113,8 @@ function stopMediaStream(stream : MediaStream) {
 
 // プッシュの種別
 export class PushKind {
-    // ユーザー情報
-    static readonly User = "User";
+    // クライアント情報
+    static readonly Client = "Client";
     // 招待
     static readonly Invite = "Invite"
 }
@@ -123,9 +123,8 @@ export class PushKind {
 interface PushData {
     kind : string;
 }
-interface UserPushData extends PushData {
-    user : User;
-    connection_info : ConnectionInfo;
+interface ClientPushData extends PushData {
+    client : Client;
     needs_response : boolean
 }
 interface InvitePushData extends PushData {
@@ -151,13 +150,11 @@ async function activate(app : JupyterFrontEnd) {
         return;
     }
 
-    // 自身のユーザー情報
-    let ownUser : User = new User()
-    ownUser.name = username;
-    // 通信情報
-    let connectionInfo : ConnectionInfo = new ConnectionInfo();
+    // 自身のクライアント情報
+    let ownClient : Client = new Client();
+    ownClient.user_name = username;
     //TEST 別ユーザー扱いにする
-    ownUser.name += generateUuid().substring(0, 8);
+    ownClient.user_name += generateUuid().substring(0, 8);
 
     // ローカルストリーム
     let localStream : MediaStream | null = null;
@@ -165,6 +162,9 @@ async function activate(app : JupyterFrontEnd) {
     // リモートストリーム
     let remoteStreams : MediaStream[] = [];
 
+    // 自身のユーザー情報
+    let ownUser : User = new User();
+    ownUser.name = ownClient.user_name;
     // ユーザーリスト
     let allUsers : User[] = [];
 
@@ -265,11 +265,10 @@ async function activate(app : JupyterFrontEnd) {
 
     // 自身のユーザー状態を更新する
     const changeUserState = (newState : UserState) => {
-        ownUser.state = newState;
-        let pushData : UserPushData = {
-            kind : PushKind.User,
-            user : ownUser,
-            connection_info : connectionInfo,
+        ownClient.state = newState;
+        let pushData : ClientPushData = {
+            kind : PushKind.Client,
+            client : ownClient,
             needs_response : false
         }
         sfuClientManager.sendPushToWaitingChannel(pushData);
@@ -282,63 +281,72 @@ async function activate(app : JupyterFrontEnd) {
         return;
     }
     console.log("connected to waiting channel, client id = " + waitingClientId);
-    connectionInfo.waiting_client_id = waitingClientId;
+    ownClient.waiting_client_id = waitingClientId;
     
     // 待機チャンネルにPushが送られた場合
     sfuClientManager.on(SfuClientEvent.PushFromWaiting, async (data : object) => {
         let pushData = data as PushData;
-        if(pushData.kind == PushKind.User) {
-            // ユーザー情報
-            let userPushData = data as UserPushData;
-            let needsResponse = userPushData.needs_response
-            let connectionInfoData = Object.assign(new ConnectionInfo(), userPushData.connection_info);
-            let userData = Object.assign(new User(), userPushData.user);
-            if(userData.name == ownUser.name) {
-                // 自身に対して情報更新
-                console.log("user name: " + userData.name + " is mine.")
-                ownUser.applyConnectionInfo(connectionInfoData);
+        if(pushData.kind == PushKind.Client) {
+            // クライアント情報
+            let clientPushData = data as ClientPushData;
+            let needsResponse = clientPushData.needs_response
+            let clientData = Object.assign(new Client(), clientPushData.client);
+            
+            if(clientData.waiting_client_id == ownClient.waiting_client_id) {
+                // 同一クライアントの場合はスルー
+                console.log("waiting client id: " + clientData.waiting_client_id + " is the same client.");
+                return;
+            } else if(clientData.user_name == ownUser.name) {
+                // 自分の情報の更新
+                console.log("waiting client id: " + clientData.waiting_client_id + " is mine. update own user.");
+                let existedClient = Enumerable.from(ownUser.clients).where(c => c.waiting_client_id == clientData.waiting_client_id).firstOrDefault();
+                if(existedClient) {
+                    // 既存のクライアントの場合データ更新
+                    existedClient.update(clientData);
+                } else {
+                    // 新規クライアントの場合追加
+                    ownUser.clients.push(clientData);
+                }
             } else {
-                let existedUser = Enumerable.from(allUsers).where(u => u.name == userData.name).firstOrDefault();
-                if(existedUser) {
-                    // 既存のユーザーに存在している場合は更新
-                    console.log("user name: " + userData.name + " is existed user's. update.")
-                    existedUser.updateFromUser(userData);
-                    existedUser.applyConnectionInfo(connectionInfoData);
-                    // このユーザーのクライアントIdに該当するストリームが存在している場合、
+                // 他ユーザーの情報更新
+                console.log("waiting client id: " + clientData.waiting_client_id + " is other's. update all users.");
+                let targetUser = Enumerable.from(allUsers).where(u => u.name == clientData.user_name).firstOrDefault();
+                if(targetUser) {
+                    let existedClient = Enumerable.from(targetUser.clients).where(c => c.waiting_client_id == clientData.waiting_client_id).firstOrDefault();
+                    if(existedClient) {
+                        // 既存のクライアントの場合データ更新
+                        existedClient.update(clientData);
+                    } else {
+                        // 新規クライアントの場合追加
+                        ownUser.clients.push(clientData);
+                    }
+                    // このユーザーの通話チャンネルクライアントIdに該当するストリームが存在している場合、
                     // ユーザーを通話参加中にする
-                    for(let id of existedUser.talking_client_ids) {
-                        if(hasRemoteStream(id)) {
-                            console.log(`[push] client id = ${id} is joined.`);
-                            existedUser.is_joined = true;
-                            existedUser.is_invited = false;
-                            break;
-                        }
+                    if(Enumerable.from(targetUser.clients).where(c => hasRemoteStream(c.talking_client_id)).any()) {
+                        console.log(`[push] client id is joined.`);
+                        targetUser.is_joined = true;
+                        targetUser.is_invited = false;
                     }
                 } else {
-                    // 存在していない場合は新規追加
-                    console.log("user name: " + userData.name + " is new user. create.");
+                    // 新ユーザーの追加
                     let newUser = new User();
-                    newUser.updateFromUser(userData);
-                    newUser.applyConnectionInfo(connectionInfoData);
+                    newUser.name = clientData.user_name;
+                    newUser.clients.push(clientData);
                     allUsers.push(newUser);
                 }
             }
+            // ウィジェット更新
+            updateWidgets();
+
             if(needsResponse) {
                 // 自身の情報を送り返す
                 console.log("response my user info.")
-                let pushData : UserPushData = {
-                    kind : PushKind.User,
-                    user : ownUser,
-                    connection_info : connectionInfo,
+                let pushData : ClientPushData = {
+                    kind : PushKind.Client,
+                    client : ownClient,
                     needs_response : false
                 };
                 sfuClientManager.sendPushToWaitingChannel(pushData);
-            }
-
-            if(userData.name != ownUser.name) {
-                console.log(allUsers);
-                // ウィジェット更新
-                updateWidgets();
             }
         } else if(pushData.kind == PushKind.Invite) {
             // 招待
@@ -354,8 +362,8 @@ async function activate(app : JupyterFrontEnd) {
                     let isAliveTalking = false;
                     let sentUser = Enumerable.from(allUsers).where(u => u.name == invitePushData.user_name).firstOrDefault();
                     if(sentUser) {
-                        // ユーザーが待機チャンネルに存在する
-                        if(sentUser.talking_client_ids.includes(invitePushData.talking_client_id)) {
+                        // ユーザーが(待機チャンネルに)存在する
+                        if(Enumerable.from(sentUser.clients).where(c => c.talking_client_id == invitePushData.talking_client_id).any()) {
                             // ユーザーが通話クライアントIdを保持している
                             isAliveTalking = true;
                         }
@@ -386,7 +394,7 @@ async function activate(app : JupyterFrontEnd) {
                         return;
                     }
                     console.log("connected to talking channel, client id = " + talkingClientId);
-                    connectionInfo.talking_client_id = talkingClientId;
+                    ownClient.talking_client_id = talkingClientId;
                     // -> 通話中
                     changeUserState(UserState.Talking);
                 } else {
@@ -400,18 +408,29 @@ async function activate(app : JupyterFrontEnd) {
     // 待機チャンネルからクライアントが離脱した場合
     sfuClientManager.on(SfuClientEvent.ClientLeaveFromWaiting, (clientId : string) => {
         console.log("remove user clientId: " + clientId);
-        // 抜けたClientIdを持つユーザーを探す
-        let hasClientIdUsers = Enumerable.from(allUsers).where(u => u.waiting_client_ids.includes(clientId)).toArray();
-        // このユーザーに対してClientIdを削除
-        for(let user of hasClientIdUsers) {
-            user.waiting_client_ids = user.waiting_client_ids.filter(id => id != clientId);
-        }
-        // ClientIdを持たなくなったユーザーを削除する
+        // 抜けたClientを削除していく
+        // 自身
         let removeIndexes : number[] = [];
-        for(let i = allUsers.length - 1; i >= 0; --i) {
-            if(allUsers[i].waiting_client_ids.length <= 0) removeIndexes.push(i);
+        for(let i = ownUser.clients.length - 1; i >= 0; --i) {
+            if(ownUser.clients[i].waiting_client_id == clientId) removeIndexes.push(i);
         }
-        removeIndexes.forEach(i => allUsers.splice(i, 1));
+        removeIndexes.forEach(i => ownUser.clients.splice(i, 1));
+        // 他ユーザー
+        let removeUserIndexes : number[] = [];
+        for(let j = allUsers.length - 1; j >= 0; --j) {
+            let user = allUsers[j];
+            removeIndexes = [];
+            for(let i = user.clients.length - 1; i >= 0; --i) {
+                if(user.clients[i].waiting_client_id == clientId) removeIndexes.push(i);
+            }
+            removeIndexes.forEach(i => user.clients.splice(i, 1));
+            if(user.clients.length <= 0) {
+                // Clientがなくなったユーザーを削除対象にする
+                removeUserIndexes.push(j);
+            }
+        }
+        // Clientを持たなくなったユーザーを削除する
+        removeUserIndexes.forEach(j => allUsers.splice(j, 1));
         // ウィジェット更新
         updateWidgets();
     });
@@ -421,14 +440,15 @@ async function activate(app : JupyterFrontEnd) {
         // ストリームidはクライアントIdと一致することを利用して、各ユーザーの参加状態を更新する
         // 各ユーザーのクライアントIdはPushで通知されるため、この段階ではまだ不明な場合もあるので
         // Push処理のほうでも参加状態更新を行う
-        allUsers.forEach(u => {
-            if(u.talking_client_ids.includes(stream.id)) {
+        for(let user of allUsers) {
+            if(Enumerable.from(user.clients).where(c => c.talking_client_id == stream.id).any()) {
                 // このユーザーがストリームの発信元なので、参加者フラグを立て、招待中フラグを落とす
                 console.log(`[track] client id = ${stream.id} is joined.`);
-                u.is_joined = true;
-                u.is_invited = false;
+                user.is_joined = true;
+                user.is_invited = false;
+                break;
             }
-        });
+        }
         addRemoteStream(stream);
         // ウィジェット更新
         updateWidgets();
@@ -443,14 +463,15 @@ async function activate(app : JupyterFrontEnd) {
 
     // 通話チャンネルからクライアントが離脱した場合
     sfuClientManager.on(SfuClientEvent.ClientLeaveFromTalking, (clientId) => {
-        // 該当のユーザーを探す
-        let leftUser = Enumerable.from(allUsers).where(u => u.talking_client_ids.includes(clientId)).firstOrDefault();
-        if(leftUser) {
-            // 通話クライアントIdを削除
-            leftUser.talking_client_ids = leftUser.talking_client_ids.filter(x => x != clientId);
-            // 参加中フラグを落とす
-            leftUser.is_joined = false;
-        }
+        // 該当のクライアント情報から通話チャンネルIdを削除
+        allUsers.forEach(user => {
+            let targetClients = Enumerable.from(user.clients).where(c => c.talking_client_id == clientId).toArray();
+            targetClients.forEach(client => client.talking_client_id = "");
+            // 通話クライアントIdを持たなくなったユーザーについて、参加中フラグを落とす
+            if(!Enumerable.from(user.clients).where(c => c.talking_client_id != "").any()) {
+                user.is_joined = false;
+            }
+        });
         // ウィジェット更新
         updateWidgets();
     });
@@ -484,7 +505,7 @@ async function activate(app : JupyterFrontEnd) {
                 return;
             }
             console.log("connected to talking channel, client id = " + talkingClientId);
-            connectionInfo.talking_client_id = talkingClientId;
+            ownClient.talking_client_id = talkingClientId;
             // 選択ユーザーに招待中フラグを立て、選択を外す
             targetUsers.forEach(u => { 
                 u.is_invited = true;
@@ -523,14 +544,13 @@ async function activate(app : JupyterFrontEnd) {
             return false;
         }
         // 通話画面に変更を反映
-        ownUser.is_sharing_display = true;
+        ownClient.is_sharing_display = true;
         // ウィジェット更新
         updateWidgets();
         // 自身の情報を送信
-        let pushData : UserPushData = {
-            kind : PushKind.User,
-            user : ownUser,
-            connection_info : connectionInfo,
+        let pushData : ClientPushData = {
+            kind : PushKind.Client,
+            client : ownClient,
             needs_response : false
         };
         sfuClientManager.sendPushToWaitingChannel(pushData);
@@ -548,14 +568,13 @@ async function activate(app : JupyterFrontEnd) {
             return false;
         }
         // 通話画面に変更を反映
-        ownUser.is_sharing_display = false;
+        ownClient.is_sharing_display = false;
         // ウィジェット更新
         updateWidgets();
         // 自身の情報を送信
-        let pushData : UserPushData = {
-            kind : PushKind.User,
-            user : ownUser,
-            connection_info : connectionInfo,
+        let pushData : ClientPushData = {
+            kind : PushKind.Client,
+            client : ownClient,
             needs_response : false
         };
         sfuClientManager.sendPushToWaitingChannel(pushData);
@@ -596,17 +615,14 @@ async function activate(app : JupyterFrontEnd) {
         // 切断する
         await sfuClientManager.disconnectFromTalkingChannel();
         allUsers.forEach(u => {
-            if(u.is_joined) {
-                // 通話参加中のユーザーの通話クライアントIdを削除
-                u.talking_client_ids = [];
-            }
             // 招待中、参加中フラグを落とす
             u.is_invited = false;
             u.is_joined = false;
+            // 該当するクライアントのチャンネルIdを削除する
+            u.clients.forEach(client => client.talking_client_id = "");
         });
         // 自身の通話クライアントIdを削除
-        connectionInfo.remove_talking_client_id = connectionInfo.talking_client_id;
-        connectionInfo.talking_client_id = "";
+        ownClient.talking_client_id = "";
         // 全てのストリームを削除する
         clearRemoteStreams();
         // ウィジェット更新
@@ -642,10 +658,9 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 自身のユーザー情報を初回プッシュ
-    let fistPushData : UserPushData = {
-        kind : PushKind.User,
-        user : ownUser,
-        connection_info : connectionInfo,
+    let fistPushData : ClientPushData = {
+        kind : PushKind.Client,
+        client : ownClient,
         needs_response : true
     };
     sfuClientManager.sendPushToWaitingChannel(fistPushData);

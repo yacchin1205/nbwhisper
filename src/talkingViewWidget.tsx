@@ -30,8 +30,8 @@ export function TalkingUserList({
                                             {user.name}
                                         </span>
                                         <span className='nbwhisper-user-list-item-icons'>
-                                            { user.is_mute && <div className='nbwhisper-mute-icon' /> }
-                                            { user.is_sharing_display && <div className='nbwhisper-share-display-icon' /> }
+                                            { user.isMute() && <div className='nbwhisper-mute-icon' /> }
+                                            { user.isSharingDisplay() && <div className='nbwhisper-share-display-icon' /> }
                                         </span>
                                     </div>
                                 }
@@ -201,7 +201,7 @@ export class TalkingViewWidget extends ReactWidget {
                             ) :
                             (
                                 // 参加中かつ画面共有中のメンバーが存在していない場合表示
-                                !Enumerable.from(this._users).where(u => u.is_joined && u.is_sharing_display).any() &&
+                                !Enumerable.from(this._users).where(u => u.is_joined && u.isSharingDisplay()).any() &&
                                 (
                                     <div className='nbwhisper-talking-view-info-text'>
                                         画面共有が開始されるとここに表示されます。
@@ -212,7 +212,7 @@ export class TalkingViewWidget extends ReactWidget {
                         <div id='nbwhisper-talking-view-video-container'>
                             {
                                 this._remoteStreams.map(x => (<RemoteMedia key={x.id} stream={x} isDisplay={
-                                    Enumerable.from(this._users).where(u => u.talking_client_ids.includes(x.id)).firstOrDefault()?.is_sharing_display ?? false
+                                    Enumerable.from(this._users).where(u => u.isSharingDisplayStream(x.id)).any()
                                 } />))
                             }
                         </div>
@@ -276,7 +276,7 @@ export class TalkingViewWidget extends ReactWidget {
                     </div>
                     <div className='nbwhisper-talking-view-center-buttons'>
                         {
-                            this._ownUser.is_mute ?
+                            this._ownUser.isMute() ?
                             <div className='nbwhisper-talking-view-button nbwhisper-talking-view-mute-off-button' 
                                 onClick={() => this._setMute(false)}/>
                             :
@@ -284,7 +284,7 @@ export class TalkingViewWidget extends ReactWidget {
                                 onClick={() => this._setMute(true)}/>
                         }
                         {
-                            this._ownUser.is_sharing_display ?
+                            this._ownUser.isSharingDisplay() ?
                             <div className='nbwhisper-talking-view-button nbwhisper-talking-view-share-display-off-button' 
                                 onClick={() => this._setSharingDisplay(false)}/>
                             :

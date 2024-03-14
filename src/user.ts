@@ -1,23 +1,38 @@
+import Enumerable from "linq";
 import { UserState } from "./userState";
 
-// ユーザー情報
-// 複数タブ、ウィンドウが開いていても共有する
-export class User {
-    // 名前
-    name : string = "";
+// クライアント情報
+// 複数タブ、ウィンドウごと(通信ごと)別に管理・公開する
+export class Client {
+    // 待機チャンネルId
+    waiting_client_id = "";
+    // 通話チャンネルId
+    talking_client_id = "";
+    // ユーザー名
+    user_name = "";
     // 通話状態
     state : UserState = UserState.Standby;
     // ミュート
     is_mute : boolean = false;
     // 画面共有
     is_sharing_display : boolean = false;
-    // 参加中のルーム名
-    joining_room_name : string = "";
-    // 待機ルームクライアントIdリスト
-    // nameでユーザーを区別するため、複数持つ
-    waiting_client_ids : string[] = [];
-    // 通話チャンネルクライアントId
-    talking_client_ids : string[] = [];
+
+    public update(client : Client) {
+        this.waiting_client_id = client.waiting_client_id;
+        this.talking_client_id = client.talking_client_id;
+        this.user_name = client.user_name;
+        this.state = client.state;
+        this.is_mute = client.is_mute;
+        this.is_sharing_display = client.is_sharing_display;
+    }
+}
+
+// ユーザー管理情報
+export class User {
+    // 名前
+    name : string = "";
+    // 所有クライアント
+    clients : Client[] = [];
 
     /** ローカルでのみ管理する項目 **/
     // 選択中か？
@@ -30,38 +45,49 @@ export class User {
     // 通話の招待可能か？
     public canInvite()
     {
-        return this.state == UserState.Standby;
+        console.log("name = " + this.name + ", state == " + this.getState());
+        return this.getState() == UserState.Standby;
     }
 
-    // 別のユーザーの情報で更新する
-    public updateFromUser(user : User) {
-        this.name = user.name;
-        this.state = user.state;
-        this.is_mute = user.is_mute;
-        this.is_sharing_display = user.is_sharing_display;
+    // ミュートか？
+    public isMute() {
+        // ミュートになっているクライアントが1つ以上あればミュート
+        return Enumerable.from(this.clients).where(c => c.is_mute).any();
     }
 
-    // 接続情報を適用する
-    public applyConnectionInfo(info : ConnectionInfo) {
-        let waiting_client_id = info.waiting_client_id;
-        if(waiting_client_id != "" && !this.waiting_client_ids.includes(waiting_client_id))
-            this.waiting_client_ids.push(waiting_client_id);
-        let talking_client_id = info.talking_client_id;
-        if(talking_client_id != "" && !this.talking_client_ids.includes(talking_client_id))
-            this.talking_client_ids.push(talking_client_id);
-        let remove_talking_client_id = info.remove_talking_client_id;
-        if(remove_talking_client_id != "" && this.talking_client_ids.includes(remove_talking_client_id))
-            this.talking_client_ids = this.talking_client_ids.filter(x => x != remove_talking_client_id);
+    // 画面共有中か？
+    public isSharingDisplay() {
+        // 共有中になっているクライアントが1つ以上あれば共有中
+        return Enumerable.from(this.clients).where(c => c.is_sharing_display).any();
     }
-}
 
-// 通信情報
-// 複数タブ、ウィンドウごと(通信ごと)別に管理する
-export class ConnectionInfo {
-    // 待機チャンネルクライアントId
-    waiting_client_id : string = "";
-    // 通話チャンネルクライアントId
-    talking_client_id : string = "";
-    // 削除対象とする通話チャンネルクライアントId
-    remove_talking_client_id : string = "";
+    // 指定のストリームIdについて共有中か？
+    public isSharingDisplayStream(id : string) {
+        return Enumerable.from(this.clients).where(c => c.is_sharing_display && c.talking_client_id == id).any();
+    }
+
+    // ステータスを取得する
+    public getState() {
+        let state : UserState = UserState.Standby;
+        for(let client of this.clients) {
+            if(client.state == UserState.Confirming) {
+                if(state == UserState.Standby) {
+                    state = UserState.Confirming;
+                }
+            } else if(client.state == UserState.Invited) {
+                if(state == UserState.Standby) {
+                    state = UserState.Invited;
+                }
+            } else if(client.state == UserState.Calling) {
+                if(state == UserState.Standby || state == UserState.Confirming) {
+                    state = UserState.Calling;
+                }
+            } else if(client.state == UserState.Talking) {
+                if(state == UserState.Standby || state == UserState.Invited || state == UserState.Confirming || state == UserState.Calling) {
+                    state = UserState.Talking;
+                }
+            }
+        }
+        return state;
+    }
 }
