@@ -1,14 +1,13 @@
-FROM niicloudoperation/notebook:latest
+FROM jupyter/scipy-notebook:latest
 
 USER root
 
+### extensions for jupyter
 COPY . /tmp/nbwhisper
-RUN pip install /tmp/nbwhisper && \
-    jupyter nbclassic-extension install --py nbwhisper --sys-prefix && \
-    jupyter nbclassic-serverextension enable --py nbwhisper --sys-prefix && \
-    jupyter nbclassic-extension enable --py nbwhisper --sys-prefix
+RUN pip --no-cache-dir install /tmp/nbwhisper
 
-# Configuration for Server Proxy
-RUN cat /tmp/nbwhisper/example/jupyter_notebook_config.py >> $CONDA_DIR/etc/jupyter/jupyter_notebook_config.py
+RUN jupyter labextension enable nbwhisper
 
-USER $NB_UID
+RUN fix-permissions /home/$NB_USER
+
+USER $NB_USER
