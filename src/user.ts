@@ -41,6 +41,8 @@ export class User {
     is_invited : boolean = false;
     // 自身の通話に入っているか？
     is_joined : boolean = false;
+    // 参加している通話ルーム名
+    talking_room_name : string = "";
 
     // 通話の招待可能か？
     public canInvite()

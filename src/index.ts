@@ -117,6 +117,8 @@ export class PushKind {
     static readonly Client = "Client";
     // 招待
     static readonly Invite = "Invite"
+    // 招待の拒絶
+    static readonly RefuseInvation = "RefuseInvation";
 }
 
 // プッシュのパラメータ
@@ -132,6 +134,10 @@ interface InvitePushData extends PushData {
     user_name : string;
     room_name : string;
     talking_client_id : string;
+}
+interface RefuseInvationPushData extends PushData {
+    user_name : string;
+    room_name : string;
 }
 
 async function activate(app : JupyterFrontEnd) {
@@ -364,6 +370,7 @@ async function activate(app : JupyterFrontEnd) {
                 changeUserState(UserState.Invited);
                 // ダイアログ表示
                 if(await showAcceptRequestDialog(invitePushData.user_name, targetUserNames)) {
+                    // 通話リクエストを許諾
                     // 通話が生きているか確認する
                     let isAliveTalking = false;
                     let sentUser = Enumerable.from(allUsers).where(u => u.name == invitePushData.user_name).firstOrDefault();
@@ -403,14 +410,37 @@ async function activate(app : JupyterFrontEnd) {
                     }
                     console.log("connected to talking channel, client id = " + talkingClientId);
                     ownClient.talking_client_id = talkingClientId;
+                    // ルーム名を保持
+                    ownUser.talking_room_name = invitePushData.room_name;
                     // 待機ユーザーリスト非表示
                     waitingUserListWidget.hide();
                     // -> 通話中
                     changeUserState(UserState.Talking);
                 } else {
+                    // 通話リクエストを拒絶
+                    let pushData : RefuseInvationPushData = {
+                        kind : PushKind.RefuseInvation,
+                        user_name : ownUser.name,
+                        room_name : invitePushData.room_name
+                    };
+                    // 拒絶を通知する
+                    await sfuClientManager.sendPushToWaitingChannel(pushData);
                     // -> 待機中
                     changeUserState(UserState.Standby);
                 }
+            }
+        } else if(pushData.kind == PushKind.RefuseInvation) {
+            // 招待の拒絶
+            let refuseInvationPushData = data as RefuseInvationPushData;
+            if(refuseInvationPushData.room_name == ownUser.talking_room_name) {
+                // 自身の通話に対する拒絶
+                // 該当のユーザーの招待フラグをOFFにする
+                let targetUser = Enumerable.from(allUsers).where(u => u.name == refuseInvationPushData.user_name).firstOrDefault();
+                if(targetUser) {
+                    targetUser.is_invited = false;
+                }
+                // ウィジェット更新
+                updateWidgets(); 
             }
         }
     });
@@ -516,6 +546,8 @@ async function activate(app : JupyterFrontEnd) {
             }
             console.log("connected to talking channel, client id = " + talkingClientId);
             ownClient.talking_client_id = talkingClientId;
+            // ルーム名保持
+            ownUser.talking_room_name = roomName;
             // 選択ユーザーに招待中フラグを立て、選択を外す
             targetUsers.forEach(u => { 
                 u.is_invited = true;
@@ -636,6 +668,8 @@ async function activate(app : JupyterFrontEnd) {
         });
         // 自身の通話クライアントIdを削除
         ownClient.talking_client_id = "";
+        // ルーム名削除
+        ownUser.talking_room_name = "";
         // 全てのストリームを削除する
         clearRemoteStreams();
         // ウィジェット更新
