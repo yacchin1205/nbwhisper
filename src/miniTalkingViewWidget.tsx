@@ -2,11 +2,13 @@ import * as React from 'react';
 import { ReactWidget } from '@jupyterlab/apputils';
 import { Signal } from '@lumino/signaling';
 import { User } from './user';
-// import { RemoteMedia } from './remoteMedia';
+import { RemoteMedia } from './remoteMedia';
+import Enumerable from 'linq';
 
 // ミニ通話画面ウィジェット
 export class MiniTalkingViewWidget extends ReactWidget {
     private _isDisplayAreaVisible = false;
+    private _isVisibleDisplayButtons = false;
 
     public onMaximizeTalkingView = new Signal<MiniTalkingViewWidget, any>(this);
     public onSetMute = new Signal<MiniTalkingViewWidget, boolean>(this);
@@ -15,12 +17,13 @@ export class MiniTalkingViewWidget extends ReactWidget {
 
     private _users : User[];
     private _ownUser : User;
+    private _remoteStreams : MediaStream[] = [];
 
-    constructor(users : User[], ownUser : User) {
+    constructor(users : User[], ownUser : User, remoteStremas : MediaStream[]) {
         super();
         this._users = users;
         this._ownUser = ownUser;
-        console.log(this._users);
+        this._remoteStreams = remoteStremas;
     }
 
     private _maximizeTakingView() {
@@ -47,6 +50,11 @@ export class MiniTalkingViewWidget extends ReactWidget {
 
     private _onHungUp() {
         this.onHungUp.emit(null);
+    }
+
+    private _setVisibleDisplayButtons(isVisible : boolean) {
+        this._isVisibleDisplayButtons = isVisible;
+        this.update();
     }
     
     render(): JSX.Element {
@@ -79,16 +87,26 @@ export class MiniTalkingViewWidget extends ReactWidget {
                         !this._isDisplayAreaVisible &&
                         <div className='nbwhisper-mini-talking-view-display-palette-opener' onClick={() => this._openDisplayArea()}/>
                     }
-                    <div className={`nbwhisper-mini-talking-view-display-area ${this._isDisplayAreaVisible ? 'active' : 'leave'}`}>
+                    <div className={`nbwhisper-mini-talking-view-display-area ${this._isDisplayAreaVisible ? 'active' : 'leave'}`}
+                        onMouseEnter={() => this._setVisibleDisplayButtons(true)}
+                        onMouseLeave={() => this._setVisibleDisplayButtons(false)}>
                         <div>
-                            <video className='nbwhisper-talking-view-display-video'/>
+                            {
+                                this.isVisible &&
+                                this._remoteStreams.map(x => (<RemoteMedia key={x.id} stream={x} isDisplay={
+                                    Enumerable.from(this._users).where(u => u.isSharingDisplayStream(x.id)).any()
+                                } />))
+                            }
                         </div>
-                        <div className='nbwhisper-mini-talking-view-display-palette-buttons'>
-                            <div className='nbwhisper-mini-talking-view-display-palette-button nbwhisper-mini-talking-view-display-palette-maximize-button'
-                                onClick={() => this._maximizeTakingView()} />
-                            <div className='nbwhisper-mini-talking-view-display-palette-button nbwhisper-mini-talking-view-display-palette-close-button'
-                                onClick={() => this._closeDisplayArea()} />
-                        </div>
+                        {
+                            this._isVisibleDisplayButtons &&
+                            <div className='nbwhisper-mini-talking-view-display-palette-buttons'>
+                                <div className='nbwhisper-mini-talking-view-display-palette-button nbwhisper-mini-talking-view-display-palette-maximize-button'
+                                    onClick={() => this._maximizeTakingView()} />
+                                <div className='nbwhisper-mini-talking-view-display-palette-button nbwhisper-mini-talking-view-display-palette-close-button'
+                                    onClick={() => this._closeDisplayArea()} />
+                            </div>
+                        }
                     </div>
                 </div>
             </div>

@@ -165,6 +165,7 @@ async function activate(app : JupyterFrontEnd) {
     // 自身のユーザー情報
     let ownUser : User = new User();
     ownUser.name = ownClient.user_name;
+    ownUser.clients.push(ownClient);
     // ユーザーリスト
     let allUsers : User[] = [];
 
@@ -173,7 +174,7 @@ async function activate(app : JupyterFrontEnd) {
     Widget.attach(waitingUserListWidget, document.body);
 
     // ミニ通話画面ウィジェット
-    const miniTalkingViewWidget = new MiniTalkingViewWidget(allUsers, ownUser);
+    const miniTalkingViewWidget = new MiniTalkingViewWidget(allUsers, ownUser, remoteStreams);
     Widget.attach(miniTalkingViewWidget, document.body);
     miniTalkingViewWidget.hide();
 
@@ -199,6 +200,7 @@ async function activate(app : JupyterFrontEnd) {
     // リモートストリーム追加
     const addRemoteStream = (stream : MediaStream) => {
         if(!Enumerable.from(remoteStreams).where(x => x.id == stream.id).any()) {
+            console.log("add remote stream: " + stream.id);
             // Idが存在していない場合は追加
             remoteStreams.push(stream);
             return true;
@@ -596,6 +598,9 @@ async function activate(app : JupyterFrontEnd) {
                 talkingViewWidget.showWidget();
                 miniTalkingViewWidget.hide();
             }
+            // 画面更新
+            talkingViewWidget.update();
+            miniTalkingViewWidget.update();
         } else {
             await finishSharingDisplay();
         }

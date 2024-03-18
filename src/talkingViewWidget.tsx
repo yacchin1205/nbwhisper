@@ -211,6 +211,7 @@ export class TalkingViewWidget extends ReactWidget {
                         }
                         <div id='nbwhisper-talking-view-video-container'>
                             {
+                                this._isInnerVisible &&
                                 this._remoteStreams.map(x => (<RemoteMedia key={x.id} stream={x} isDisplay={
                                     Enumerable.from(this._users).where(u => u.isSharingDisplayStream(x.id)).any()
                                 } />))
