@@ -9,7 +9,7 @@ import { Widget } from '@lumino/widgets';
 import { Client, User } from './user';
 import { UserState } from './userState';
 import { TalkingViewWidget } from './talkingViewWidget';
-import { DialogWidget } from './dialogWidget';
+import { DialogStyle, DialogWidget } from './dialogWidget';
 import Enumerable from 'linq';
 import { MiniTalkingViewWidget } from './miniTalkingViewWidget';
 import { SfuClientManager, SfuClientEvent } from './sfuClientManager';
@@ -235,9 +235,11 @@ async function activate(app : JupyterFrontEnd) {
     
         return await dialogWidget.showAskDialog({
             body: "通話リクエストを送信しますか？",
-            subBody: subBody,
+            subBody1: subBody,
+            subBody2: "",
             ok: "送信",
             cancel: "キャンセル",
+            style: DialogStyle.Plain
         });
     };
 
@@ -248,9 +250,11 @@ async function activate(app : JupyterFrontEnd) {
 
         return await dialogWidget.showAskDialog({
             body: body,
-            subBody: subBody,
+            subBody1: subBody,
+            subBody2: "",
             ok: "参加",
             cancel: "参加しない",
+            style: DialogStyle.Join
         });
     };
 

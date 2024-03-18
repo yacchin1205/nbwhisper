@@ -217,6 +217,56 @@
     color: #5d5d5d;
 }
 
+.nbwhisper-button-not-join {
+    background-color: #ff2747;
+    border-radius: 4px;
+}
+
+.nbwhisper-button-not-join:hover {
+    background-color: #bc0001;
+    transition: background-color .5s;
+}
+
+.nbwhisper-button-not-join-icon {
+    width: 21px;
+    height: 21px;
+    background-image: url(./resources/hang_up.svg);
+    background-size: 21px 21px;
+    background-repeat: no-repeat;
+    margin-left: -8px;
+    display: inline-block;
+}
+
+.nbwhisper-button-not-join-text {
+    color: #ffffff;
+    margin-left: 8px;
+}
+
+.nbwhisper-button-join {
+    background-color: #005bd5;
+    border-radius: 4px;
+}
+
+.nbwhisper-button-join:hover {
+    background-color: #003780;
+    transition: background-color .5s;
+}
+
+.nbwhisper-button-join-icon {
+    width: 21px;
+    height: 21px;
+    background-image: url(./resources/hang_on.svg);
+    background-size: 21px 21px;
+    background-repeat: no-repeat;
+    margin-left: -8px;
+    display: inline-block;
+}
+
+.nbwhisper-button-join-text {
+    color: #ffffff;
+    margin-left: 8px;
+}
+
 .nbwhisper-overlay {
     position: fixed;
     top: 0;
