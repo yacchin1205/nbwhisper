@@ -218,9 +218,12 @@ export class TalkingViewWidget extends ReactWidget {
                             }
                         </div>
                     </div>
-                    <div className='nbwhisper-talking-view-display-name'>
-                        ********の画面
-                    </div>
+                    {
+                        Enumerable.from(this._users).where(u => u.isSharingDisplay()).any() &&
+                        <div className='nbwhisper-talking-view-display-name'>
+                            {Enumerable.from(this._users).where(u => u.isSharingDisplay()).first().name}の画面
+                        </div>
+                    }
                     <div className={`nbwhisper-talking-view-user-list-area ${this._isUserListVisible ? 'active' : 'leave'}`}>
                         {
                             this._userListPage == 0 &&

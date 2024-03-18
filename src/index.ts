@@ -346,7 +346,7 @@ async function activate(app : JupyterFrontEnd) {
 
             if(needsResponse) {
                 // 自身の情報を送り返す
-                console.log("response my user info.")
+                console.log("response my client.")
                 let pushData : ClientPushData = {
                     kind : PushKind.Client,
                     client : ownClient,
@@ -395,12 +395,16 @@ async function activate(app : JupyterFrontEnd) {
                     let talkingClientId = await sfuClientManager.connectToTalkingChannel(invitePushData.room_name, localStream);
                     if(talkingClientId == "") {
                         alert("通話の開始に失敗しました");
+                        // 通話ビュー非表示
+                        talkingViewWidget.hideWidget();
                         // -> 待機中
                         changeUserState(UserState.Standby);
                         return;
                     }
                     console.log("connected to talking channel, client id = " + talkingClientId);
                     ownClient.talking_client_id = talkingClientId;
+                    // 待機ユーザーリスト非表示
+                    waitingUserListWidget.hide();
                     // -> 通話中
                     changeUserState(UserState.Talking);
                 } else {
@@ -627,7 +631,7 @@ async function activate(app : JupyterFrontEnd) {
             // 招待中、参加中フラグを落とす
             u.is_invited = false;
             u.is_joined = false;
-            // 該当するクライアントのチャンネルIdを削除する
+            // ユーザーのクライアントのチャンネルIdを削除
             u.clients.forEach(client => client.talking_client_id = "");
         });
         // 自身の通話クライアントIdを削除
@@ -636,6 +640,8 @@ async function activate(app : JupyterFrontEnd) {
         clearRemoteStreams();
         // ウィジェット更新
         updateWidgets();
+        // 待機ユーザーリスト表示
+        waitingUserListWidget.show();
         // -> 待機中
         changeUserState(UserState.Standby);
     }
