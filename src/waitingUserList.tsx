@@ -10,7 +10,7 @@ export function WaitingUserList({
 } : {
     optionalClassName : string,
     users : User[],
-    onSelect : (index : number) => void
+    onSelect : (user : User) => void
 }) : JSX.Element {
     const [hoveringIndex, setHoveringIndex] = React.useState(-1);
     let waitingUsers = Enumerable.from(users).where(u => u.canInvite()).toArray();
@@ -27,7 +27,7 @@ export function WaitingUserList({
                                         className='nbwhisper-user-list-item'
                                         onMouseEnter={() => setHoveringIndex(index)}
                                         onMouseLeave={() => setHoveringIndex(-1)}
-                                        onClick={() => onSelect(users.indexOf(waitingUsers[index]))}
+                                        onClick={() => onSelect(waitingUsers[index])}
                                     >
                                         <span className='nbwhisper-user-list-item-label'>
                                             {user.name}

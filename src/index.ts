@@ -6,7 +6,7 @@ import {
 import { requestAPI } from './handler';
 import { WaitingUserListWidget } from './waitingUserListWidget';
 import { Widget } from '@lumino/widgets';
-import { Client, User } from './user';
+import { Client, User, Invitation } from './user';
 import { UserState } from './userState';
 import { TalkingViewWidget } from './talkingViewWidget';
 import { DialogStyle, DialogWidget } from './dialogWidget';
@@ -15,6 +15,7 @@ import { MiniTalkingViewWidget } from './miniTalkingViewWidget';
 import { SfuClientManager, SfuClientEvent } from './sfuClientManager';
 import { generateUuid } from './uuid';
 import { DummyCanvasWidget } from './dummyCanvasWidget';
+import { RequestTalkingWidget } from './requestTalkingWidget';
 
 let Sora : any;
 // 本来は
@@ -118,7 +119,9 @@ export class PushKind {
     // 招待
     static readonly Invite = "Invite"
     // 招待の拒絶
-    static readonly RefuseInvation = "RefuseInvation";
+    static readonly RefuseInvite = "RefuseInvite";
+    // 招待をキャンセル
+    static readonly CancelInvite = "CancelInvite";
 }
 
 // プッシュのパラメータ
@@ -134,8 +137,15 @@ interface InvitePushData extends PushData {
     user_name : string;
     room_name : string;
     talking_client_id : string;
+    joining_users : string[];
 }
-interface RefuseInvationPushData extends PushData {
+interface RefuseInvitePushData extends PushData {
+    target : string;
+    user_name : string;
+    room_name : string;
+}
+interface CancelInvitePushData extends PushData {
+    target : string;
     user_name : string;
     room_name : string;
 }
@@ -172,6 +182,8 @@ async function activate(app : JupyterFrontEnd) {
     let ownUser : User = new User();
     ownUser.name = ownClient.user_name;
     ownUser.clients.push(ownClient);
+    // 招待情報
+    let invitation : Invitation | null = null;
     // ユーザーリスト
     let allUsers : User[] = [];
 
@@ -192,6 +204,10 @@ async function activate(app : JupyterFrontEnd) {
     const dialogWidget = new DialogWidget();
     Widget.attach(dialogWidget, document.body);
 
+    // 通話リクエスト通知ウィジェット
+    const requestTalkingWidget = new RequestTalkingWidget(ownUser);
+    Widget.attach(requestTalkingWidget, document.body);
+
     // ダミーキャンバスウィジェット
     const dummyCanvasWidget = new DummyCanvasWidget();
     Widget.attach(dummyCanvasWidget, document.body);
@@ -199,6 +215,7 @@ async function activate(app : JupyterFrontEnd) {
     // ウィジェットの更新
     const updateWidgets = () => {
         waitingUserListWidget.update();
+        requestTalkingWidget.update();
         miniTalkingViewWidget.update();
         talkingViewWidget.update();
     };
@@ -251,18 +268,17 @@ async function activate(app : JupyterFrontEnd) {
         });
     };
 
-    const showAcceptRequestDialog = async (userName : string, targetUserNames : string[]) => {
-        let body = `${userName}から通話への参加リクエストが届きました。参加しますか？`;
-        let subBody = `${targetUserNames.length}名にリクエスト中 :\n`;
-        subBody += targetUserNames.join(", ");
-
+    const showRequestJoiningDialog = async (users : User[]) => {
+        let subBody = `${users.length}名に送信します :\n`;
+        subBody += Enumerable.from(users).select(u => u.name).toArray().join(", ");
+    
         return await dialogWidget.showAskDialog({
-            body: body,
+            body: "参加リクエストを送信しますか？",
             subBody1: subBody,
             subBody2: "",
-            ok: "参加",
-            cancel: "参加しない",
-            style: DialogStyle.Join
+            ok: "送信",
+            cancel: "キャンセル",
+            style: DialogStyle.Plain
         });
     };
 
@@ -363,85 +379,117 @@ async function activate(app : JupyterFrontEnd) {
         } else if(pushData.kind == PushKind.Invite) {
             // 招待
             let invitePushData = data as InvitePushData;
-            let targetUserNames = invitePushData.target;
-            if(targetUserNames.includes(ownUser.name)) {
+            if(invitePushData.target.includes(ownUser.name)) {
                 // 自身が招待を受けた
+                // 招待情報を保持
+                invitation = new Invitation();
+                invitation.room_name = invitePushData.room_name;
+                invitation.from_user_name = invitePushData.user_name;
+                invitation.from_talking_client_id = invitePushData.talking_client_id;
+                // ダイアログのセットアップ
+                requestTalkingWidget.setup(invitePushData.user_name, invitePushData.target, invitePushData.joining_users);
                 // -> 着信中
                 changeUserState(UserState.Invited);
-                // ダイアログ表示
-                if(await showAcceptRequestDialog(invitePushData.user_name, targetUserNames)) {
-                    // 通話リクエストを許諾
-                    // 通話が生きているか確認する
-                    let isAliveTalking = false;
-                    let sentUser = Enumerable.from(allUsers).where(u => u.name == invitePushData.user_name).firstOrDefault();
-                    if(sentUser) {
-                        // ユーザーが(待機チャンネルに)存在する
-                        if(Enumerable.from(sentUser.clients).where(c => c.talking_client_id == invitePushData.talking_client_id).any()) {
-                            // ユーザーが通話クライアントIdを保持している
-                            isAliveTalking = true;
-                        }
-                    }
-                    if(!isAliveTalking) {
-                        alert("通話が終了したため、この招待は無効になりました");
-                        // -> 待機中
-                        changeUserState(UserState.Standby);
-                        return;
-                    }
-                    // オーディオストリーム取得
-                    localStream = await getAudioStream(dummyCanvasWidget);
-                    if(!localStream) {
-                        alert("マイクを使用することができないため、通話を開始することができませんでした");
-                        // -> 待機中
-                        changeUserState(UserState.Standby);
-                        return;
-                    }
-                    console.log("local stream id = " + localStream.id);
-                    // 通話ビュー表示
-                    talkingViewWidget.showWidget();
-                    // ルームに入る
-                    let talkingClientId = await sfuClientManager.connectToTalkingChannel(invitePushData.room_name, localStream);
-                    if(talkingClientId == "") {
-                        alert("通話の開始に失敗しました");
-                        // 通話ビュー非表示
-                        talkingViewWidget.hideWidget();
-                        // -> 待機中
-                        changeUserState(UserState.Standby);
-                        return;
-                    }
-                    console.log("connected to talking channel, client id = " + talkingClientId);
-                    ownClient.talking_client_id = talkingClientId;
-                    // ルーム名を保持
-                    ownUser.talking_room_name = invitePushData.room_name;
-                    // 待機ユーザーリスト非表示
-                    waitingUserListWidget.hide();
-                    // -> 通話中
-                    changeUserState(UserState.Talking);
-                } else {
-                    // 通話リクエストを拒絶
-                    let pushData : RefuseInvationPushData = {
-                        kind : PushKind.RefuseInvation,
-                        user_name : ownUser.name,
-                        room_name : invitePushData.room_name
-                    };
-                    // 拒絶を通知する
-                    await sfuClientManager.sendPushToWaitingChannel(pushData);
-                    // -> 待機中
-                    changeUserState(UserState.Standby);
-                }
+                // ウィジェット更新
+                updateWidgets(); 
             }
-        } else if(pushData.kind == PushKind.RefuseInvation) {
+        } else if(pushData.kind == PushKind.RefuseInvite) {
             // 招待の拒絶
-            let refuseInvationPushData = data as RefuseInvationPushData;
-            if(refuseInvationPushData.room_name == ownUser.talking_room_name) {
-                // 自身の通話に対する拒絶
+            let refuseInvitePushData = data as RefuseInvitePushData;
+            if(invitation && refuseInvitePushData.room_name == invitation.room_name && refuseInvitePushData.target == ownUser.name) {
                 // 該当のユーザーの招待フラグをOFFにする
-                let targetUser = Enumerable.from(allUsers).where(u => u.name == refuseInvationPushData.user_name).firstOrDefault();
+                let targetUser = Enumerable.from(allUsers).where(u => u.name == refuseInvitePushData.user_name).firstOrDefault();
                 if(targetUser) {
                     targetUser.is_invited = false;
                 }
                 // ウィジェット更新
                 updateWidgets(); 
             }
+        } else if(pushData.kind == PushKind.CancelInvite) {
+            // 招待のキャンセル
+            let cancelInvitePushData = data as CancelInvitePushData;
+            if(invitation && cancelInvitePushData.room_name == invitation.room_name && cancelInvitePushData.target == ownUser.name) {
+                // 招待をクリア
+                invitation = null;
+                // -> 待機中
+                changeUserState(UserState.Standby);
+                // ウィジェット更新
+                updateWidgets(); 
+            }
+        }
+    });
+
+    // 通話リクエスト通知ウィジェットで決定した場合
+    requestTalkingWidget.onDesideRequest.connect(async (_, isOk) => {
+        if(!invitation) return;
+
+        // 招待が生きているか確認する
+        let isAliveTalking = false;
+        if(invitation) {
+            // 招待情報のルーム名に参加しているユーザーの存在を確認する
+            let roomName = invitation.room_name;
+            console.log(roomName)
+            console.log(allUsers)
+            if(Enumerable.from(allUsers).where(u => u.isJoiningTalkingRoom(roomName)).any()) {
+                isAliveTalking = true;
+            }
+        }
+        if(!isAliveTalking) {
+            alert("通話が終了したため、この招待は無効になりました");
+            // 招待情報をクリア
+            invitation = null;
+            // -> 待機中
+            changeUserState(UserState.Standby);
+            // ウィジェット更新
+            updateWidgets();
+            return;
+        }
+
+        if(isOk) {
+            // オーディオストリーム取得
+            localStream = await getAudioStream(dummyCanvasWidget);
+            if(!localStream) {
+                alert("マイクを使用することができないため、通話を開始することができませんでした");
+                return;
+            }
+            console.log("local stream id = " + localStream.id);
+            // 通話ビュー表示
+            talkingViewWidget.showWidget();
+            // ルームに入る
+            let talkingClientId = await sfuClientManager.connectToTalkingChannel(invitation.room_name, localStream);
+            if(talkingClientId == "") {
+                alert("通話の開始に失敗しました");
+                // 通話ビュー非表示
+                talkingViewWidget.hideWidget();
+                return;
+            }
+            console.log("connected to talking channel, client id = " + talkingClientId);
+            ownClient.talking_client_id = talkingClientId;
+            ownClient.talking_room_name = invitation.room_name;
+            // 待機ユーザーリスト非表示
+            waitingUserListWidget.hide();
+            // 招待情報をクリア
+            invitation = null;
+            // -> 通話中
+            changeUserState(UserState.Talking);
+            // ウィジェット更新
+            updateWidgets(); 
+        } else {
+            // 通話リクエストを拒絶
+            let pushData : RefuseInvitePushData = {
+                kind : PushKind.RefuseInvite,
+                target : invitation.from_user_name,
+                user_name : ownUser.name,
+                room_name : invitation.room_name
+            };
+            // 拒絶を通知する
+            await sfuClientManager.sendPushToWaitingChannel(pushData);
+            // 招待情報をクリア
+            invitation = null;
+            // -> 待機中
+            changeUserState(UserState.Standby);
+            // ウィジェット更新
+            updateWidgets(); 
         }
     });
 
@@ -531,9 +579,6 @@ async function activate(app : JupyterFrontEnd) {
             }
             localStream = stream;
             console.log("local stream id = " + localStream.id);
-            // ターゲット
-            let targetUsers = Enumerable.from(allUsers).where(u => u.is_selected).toArray();
-            let targetUserNames = Enumerable.from(targetUsers).select(u => u.name).toArray();
             // 通話ルーム名を作成して新規接続
             let roomName = "talking-" + generateUuid();
             let talkingClientId = await sfuClientManager.connectToTalkingChannel(roomName, localStream);
@@ -546,10 +591,9 @@ async function activate(app : JupyterFrontEnd) {
             }
             console.log("connected to talking channel, client id = " + talkingClientId);
             ownClient.talking_client_id = talkingClientId;
-            // ルーム名保持
-            ownUser.talking_room_name = roomName;
+            ownClient.talking_room_name = roomName;
             // 選択ユーザーに招待中フラグを立て、選択を外す
-            targetUsers.forEach(u => { 
+            users.forEach(u => { 
                 u.is_invited = true;
                 u.is_selected = false;
             });
@@ -558,12 +602,14 @@ async function activate(app : JupyterFrontEnd) {
             // 通話ビュー表示
             talkingViewWidget.showWidget();
             // 招待を送る
+            let userNames = Enumerable.from(users).select(u => u.name).toArray();
             let pushData : InvitePushData = {
                 kind : PushKind.Invite,
-                target : targetUserNames,
+                target : userNames,
                 user_name : ownUser.name,
                 room_name : roomName,
-                talking_client_id : talkingClientId
+                talking_client_id : talkingClientId,
+                joining_users : []
             }
             sfuClientManager.sendPushToWaitingChannel(pushData);
             // -> 呼び出し中
@@ -572,6 +618,49 @@ async function activate(app : JupyterFrontEnd) {
             // -> 待機中
             changeUserState(UserState.Standby);
         }
+    });
+
+    // 通話画面で「参加をリクエスト」ボタンをクリックした
+    talkingViewWidget.onResuestJoining.connect(async (_, users) => {
+        if(await showRequestJoiningDialog(users)) {
+            // 通話画面の参加者リストページをリセット
+            talkingViewWidget.changeUserListPage(0);
+            // 現在の参加者
+            let joiningUsers = [ownUser.name];
+            joiningUsers = joiningUsers.concat(Enumerable.from(allUsers).where(u => u.is_joined).select(u => u.name).toArray());
+            // 選択ユーザーに招待中フラグを立て、選択を外す
+            users.forEach(u => { 
+                u.is_invited = true;
+                u.is_selected = false;
+            });
+            // ウィジェット更新
+            updateWidgets();
+            // 招待を送る
+            let userNames = Enumerable.from(users).select(u => u.name).toArray();
+            let pushData : InvitePushData = {
+                kind : PushKind.Invite,
+                target : userNames,
+                user_name : ownUser.name,
+                room_name : ownClient.talking_room_name,
+                talking_client_id : ownClient.talking_client_id,
+                joining_users : joiningUsers
+            }
+            await sfuClientManager.sendPushToWaitingChannel(pushData);
+        }
+    });
+
+    // 通話画面でリクエスト状態をキャンセルした
+    talkingViewWidget.onCancelRequest.connect(async (_, user) => {
+        // 招待中フラグを取り消す
+        user.is_invited = false;
+        // 招待キャンセルを送る
+        let pushData : CancelInvitePushData = {
+            kind : PushKind.CancelInvite,
+            target : user.name,
+            user_name : ownUser.name,
+            room_name : ownClient.talking_room_name
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
     });
 
     // 画面共有を開始する
@@ -669,7 +758,7 @@ async function activate(app : JupyterFrontEnd) {
         // 自身の通話クライアントIdを削除
         ownClient.talking_client_id = "";
         // ルーム名削除
-        ownUser.talking_room_name = "";
+        ownClient.talking_room_name = "";
         // 全てのストリームを削除する
         clearRemoteStreams();
         // ウィジェット更新

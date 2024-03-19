@@ -76,12 +76,9 @@ export class WaitingUserListWidget extends ReactWidget {
         }
     }
 
-    _onSelectUser(index : number) {
-        console.log("on select user: " + index);
-        if(index < this._users.length) {
-            this._users[index].is_selected = !this._users[index].is_selected;
-            this.update();
-        }
+    _onSelectUser(user : User) {
+        user.is_selected = !user.is_selected;
+        this.update();
     }
 
     render(): JSX.Element {
@@ -96,7 +93,7 @@ export class WaitingUserListWidget extends ReactWidget {
                     <div className='nbwhisper-waiting-user-list-dialog'>
                         <WaitingUserList 
                             users={this._users}
-                            onSelect={(index) => this._onSelectUser(index)}
+                            onSelect={(user) => this._onSelectUser(user)}
                             optionalClassName='nbwhisper-waiting-user-list-container'
                         />
                         <RequestTalkingButton

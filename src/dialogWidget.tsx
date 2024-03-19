@@ -32,7 +32,7 @@ export class DialogWidget extends ReactWidget {
         super();
     }
 
-    showAskDialog(options : IAskDialogOptions) {
+    public showAskDialog(options : IAskDialogOptions) {
         this._isDialogVisible = true;
         this._body = options.body;
         this._subBody1 = options.subBody1;
@@ -46,7 +46,7 @@ export class DialogWidget extends ReactWidget {
         });
     }
 
-    _hideDialog() {
+    private _hideDialog() {
         this._isDialogVisible = false;
         this._body = "";
         this._subBody1 = "";
@@ -56,11 +56,11 @@ export class DialogWidget extends ReactWidget {
         this.update();
     }
 
-    _onOk() {
+    private _onOk() {
         this._resolve(true);
     }
 
-    _onCancel() {
+    private _onCancel() {
         this._resolve(false);
     }
 
@@ -69,7 +69,7 @@ export class DialogWidget extends ReactWidget {
             <div>
                 { 
                     this._isDialogVisible && 
-                    <div className='nbwhisper-overlay'>
+                    <div className='nbwhisper-overlay nbwhisper-frontmost'>
                         <div className='nbwhisper-dialog-base'>
                             {
                                 this._body != "" &&

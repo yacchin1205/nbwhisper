@@ -12,7 +12,7 @@ export function TalkingUserList({
     onCancel
 } : {
     users : User[],
-    onCancel : (index : number) => void
+    onCancel : (user : User) => void
 }) : JSX.Element {
     const [hoveringIndex, setHoveringIndex] = React.useState(-1);
     let talkingUsers = Enumerable.from(users).where(u => u.is_joined).toArray();
@@ -65,7 +65,7 @@ export function TalkingUserList({
                                             { 
                                                 hoveringIndex == index && 
                                                 <div className='nbwhisper-talking-view-user-list-cancel-button'
-                                                    onClick={() => onCancel(users.indexOf(callingUsers[index]))}>
+                                                    onClick={() => onCancel(callingUsers[index])}>
                                                     取消
                                                 </div> }
                                         </span>
@@ -117,6 +117,8 @@ export class TalkingViewWidget extends ReactWidget {
     public onSetMute = new Signal<TalkingViewWidget, boolean>(this);
     public onSetSharingDisplay = new Signal<TalkingViewWidget, boolean>(this);
     public onHungUp = new Signal<TalkingViewWidget, any>(this); 
+    public onResuestJoining = new Signal<TalkingViewWidget, User[]>(this);
+    public onCancelRequest = new Signal<TalkingViewWidget, User>(this);
 
     constructor(users : User[], ownUser : User, remoteStremas : MediaStream[]) {
         super();
@@ -135,15 +137,18 @@ export class TalkingViewWidget extends ReactWidget {
         this.update();
     }
 
-    private _onSelectUser(index : number) {
-        if(index < this._users.length) {
-            this._users[index].is_selected = !this._users[index].is_selected;
-            this.update();
-        }
+    public changeUserListPage(page : number) {
+        this._userListPage = page;
+        this.update();
     }
 
-    private _onCancelCallingUser(index : number) {
-        console.log("on cancel calling user: " + index);
+    private _onSelectUser(user : User) {
+        user.is_selected = !user.is_selected;
+        this.update();
+    }
+
+    private _onCancelCallingUser(user : User) {
+        this.onCancelRequest.emit(user);
     }
 
     private _minimizeTalkingView() {
@@ -178,7 +183,10 @@ export class TalkingViewWidget extends ReactWidget {
     }
 
     private _requestJoining() {
-
+        let users = Enumerable.from(this._users).where(u => u.is_selected).toArray();
+        if(users.length > 0) {
+            this.onResuestJoining.emit(users);
+        }
     }
     
     render(): JSX.Element {
@@ -237,7 +245,7 @@ export class TalkingViewWidget extends ReactWidget {
                                 </div>
                                 <TalkingUserList
                                     users={this._users}
-                                    onCancel={(index) => this._onCancelCallingUser(index)}
+                                    onCancel={(user) => this._onCancelCallingUser(user)}
                                 />
                                 <div className='nbwhisper-talking-view-user-list-footer'>
                                     <div className='nbwhisper-button nbwhisper-button-normal nbwhisper-talking-view-user-list-add-member-button'
@@ -261,8 +269,8 @@ export class TalkingViewWidget extends ReactWidget {
                                         onClick={() => this._hideUserList()}/>
                                 </div>
                                 <WaitingUserList
-                                    users={this._users}
-                                    onSelect={(index) => this._onSelectUser(index)}
+                                    users={Enumerable.from(this._users).where(u => !u.is_invited && !u.is_joined).toArray()}
+                                    onSelect={(user) => this._onSelectUser(user)}
                                     optionalClassName='nbwhisper-talking-view-user-list-container'
                                 />
                                 <RequestJoiningButton

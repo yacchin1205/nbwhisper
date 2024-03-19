@@ -4,10 +4,12 @@ import { UserState } from "./userState";
 // クライアント情報
 // 複数タブ、ウィンドウごと(通信ごと)別に管理・公開する
 export class Client {
-    // 待機チャンネルId
+    // 待機チャンネルクライアントId
     waiting_client_id = "";
-    // 通話チャンネルId
+    // 通話チャンネルクライアントId
     talking_client_id = "";
+    // 通話チャンネルルーム名
+    talking_room_name = "";
     // ユーザー名
     user_name = "";
     // 通話状態
@@ -20,6 +22,7 @@ export class Client {
     public update(client : Client) {
         this.waiting_client_id = client.waiting_client_id;
         this.talking_client_id = client.talking_client_id;
+        this.talking_room_name = client.talking_room_name;
         this.user_name = client.user_name;
         this.state = client.state;
         this.is_mute = client.is_mute;
@@ -41,13 +44,10 @@ export class User {
     is_invited : boolean = false;
     // 自身の通話に入っているか？
     is_joined : boolean = false;
-    // 参加している通話ルーム名
-    talking_room_name : string = "";
 
     // 通話の招待可能か？
     public canInvite()
     {
-        console.log("name = " + this.name + ", state == " + this.getState());
         return this.getState() == UserState.Standby;
     }
 
@@ -66,6 +66,11 @@ export class User {
     // 指定のストリームIdについて共有中か？
     public isSharingDisplayStream(id : string) {
         return Enumerable.from(this.clients).where(c => c.is_sharing_display && c.talking_client_id == id).any();
+    }
+
+    // 通話ルームに参加しているか？
+    public isJoiningTalkingRoom(roomName : string) {
+        return Enumerable.from(this.clients).where(c => c.talking_room_name == roomName).any();
     }
 
     // ステータスを取得する
@@ -93,3 +98,13 @@ export class User {
         return state;
     }
 }
+
+// 招待情報
+export class Invitation {
+    // ルーム名
+    room_name : string = "";
+    // 招待元ユーザー
+    from_user_name : string = "";
+    // 招待元ユーザークライアントId
+    from_talking_client_id : string = "";
+} 
