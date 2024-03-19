@@ -114,6 +114,7 @@ export class DialogWidget extends ReactWidget {
             this.update();
             if(id in this._resolves) {
                 this._resolves[id](isOk);
+                delete this._resolves[id];
             }
         }
     }
