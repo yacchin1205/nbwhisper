@@ -14,10 +14,6 @@ export class Client {
     user_name = "";
     // 通話状態
     state : UserState = UserState.Standby;
-    // ミュート
-    is_mute : boolean = false;
-    // 画面共有
-    is_sharing_display : boolean = false;
 
     public update(client : Client) {
         this.waiting_client_id = client.waiting_client_id;
@@ -25,8 +21,6 @@ export class Client {
         this.talking_room_name = client.talking_room_name;
         this.user_name = client.user_name;
         this.state = client.state;
-        this.is_mute = client.is_mute;
-        this.is_sharing_display = client.is_sharing_display;
     }
 }
 
@@ -44,6 +38,10 @@ export class User {
     is_invited : boolean = false;
     // 自身の通話に入っているか？
     is_joined : boolean = false;
+    // ミュート中か？
+    is_mute : boolean = false;
+    // 画面共有中か？
+    is_sharing_display : boolean = false;
 
     // 通話の招待可能か？
     public canInvite()
@@ -51,21 +49,9 @@ export class User {
         return this.getState() == UserState.Standby;
     }
 
-    // ミュートか？
-    public isMute() {
-        // ミュートになっているクライアントが1つ以上あればミュート
-        return Enumerable.from(this.clients).where(c => c.is_mute).any();
-    }
-
-    // 画面共有中か？
-    public isSharingDisplay() {
-        // 共有中になっているクライアントが1つ以上あれば共有中
-        return Enumerable.from(this.clients).where(c => c.is_sharing_display).any();
-    }
-
-    // 指定のストリームIdについて共有中か？
-    public isSharingDisplayStream(id : string) {
-        return Enumerable.from(this.clients).where(c => c.is_sharing_display && c.talking_client_id == id).any();
+    // 指定のストリームIdのユーザーか？
+    public hasStream(id : string) {
+        return Enumerable.from(this.clients).where(c => c.talking_client_id == id).any();
     }
 
     // 通話ルームに参加しているか？

@@ -63,7 +63,7 @@ export class MiniTalkingViewWidget extends ReactWidget {
                 <div className='nbwhisper-mini-talking-view-button-palette'>
                     <div className='nbwhisper-mini-talking-view-buttons'>
                         {
-                            this._ownUser.isMute() ?
+                            this._ownUser.is_mute ?
                             <div className='nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-mute-off-button' 
                                 onClick={() => this._setMute(false)} />
                             :
@@ -71,7 +71,7 @@ export class MiniTalkingViewWidget extends ReactWidget {
                                 onClick={() => this._setMute(true)} />                            
                         }
                         {
-                            this._ownUser.isSharingDisplay() &&
+                            this._ownUser.is_sharing_display &&
                             <div className='nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-display-off-button'
                                 onClick={() => this._setSharingDisplay(false)} />
                         }
@@ -93,9 +93,15 @@ export class MiniTalkingViewWidget extends ReactWidget {
                         <div>
                             {
                                 this.isVisible &&
-                                this._remoteStreams.map(x => (<RemoteMedia key={x.id} stream={x} isDisplay={
-                                    Enumerable.from(this._users).where(u => u.isSharingDisplayStream(x.id)).any()
-                                } />))
+                                this._remoteStreams.map(x => (<RemoteMedia 
+                                    key={x.id} 
+                                    stream={x} 
+                                    isDisplay={
+                                        Enumerable.from(this._users).where(u => u.hasStream(x.id)).firstOrDefault()?.is_sharing_display ?? false
+                                    }
+                                    isMute={
+                                        Enumerable.from(this._users).where(u => u.hasStream(x.id)).firstOrDefault()?.is_mute ?? false
+                                    } />))
                             }
                         </div>
                         {

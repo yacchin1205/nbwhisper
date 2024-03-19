@@ -122,6 +122,10 @@ export class PushKind {
     static readonly RefuseInvite = "RefuseInvite";
     // 招待をキャンセル
     static readonly CancelInvite = "CancelInvite";
+    // 画面共有切り替え
+    static readonly ShareDisplay = "ShareDisplay";
+    // ミュート切り替え
+    static readonly Mute = "Mute";
 }
 
 // プッシュのパラメータ
@@ -148,6 +152,16 @@ interface CancelInvitePushData extends PushData {
     target : string;
     user_name : string;
     room_name : string;
+}
+interface ShareDisplayPushData extends PushData {
+    user_name : string;
+    room_name : string;
+    is_sharing_display : boolean;
+}
+interface MutePushData extends PushData {
+    user_name : string;
+    room_name : string;
+    is_mute : boolean;
 }
 
 async function activate(app : JupyterFrontEnd) {
@@ -416,6 +430,33 @@ async function activate(app : JupyterFrontEnd) {
                 // ウィジェット更新
                 updateWidgets(); 
             }
+        } else if(pushData.kind == PushKind.ShareDisplay) {
+            // 画面の共有切り替え
+            let shareDisplayPushData = data as ShareDisplayPushData;
+            let user = Enumerable.from(allUsers).where(u => u.name == shareDisplayPushData.user_name).firstOrDefault();
+            if(user && shareDisplayPushData.room_name == ownClient.talking_room_name) {
+                // 更新
+                user.is_sharing_display = shareDisplayPushData.is_sharing_display;
+                if(
+                    shareDisplayPushData.is_sharing_display && 
+                    ownUser.is_sharing_display
+                ) {
+                    // 同室かつ自分も相手も共有状態になった場合は、自分の共有を解除する
+                    await finishSharingDisplay();
+                }
+                // ウィジェット更新
+                updateWidgets(); 
+            }
+        } else if(pushData.kind == PushKind.Mute) {
+            // ミュート切り替え
+            let muteDisplayPushData = data as MutePushData;
+            let user = Enumerable.from(allUsers).where(u => u.name == muteDisplayPushData.user_name).firstOrDefault();
+            if(user && muteDisplayPushData.room_name == ownClient.talking_room_name) {
+                // 更新
+                user.is_mute = muteDisplayPushData.is_mute;
+                // ウィジェット更新
+                updateWidgets(); 
+            }
         }
     });
 
@@ -562,6 +603,9 @@ async function activate(app : JupyterFrontEnd) {
             // 通話クライアントIdを持たなくなったユーザーについて、参加中フラグを落とす
             if(!Enumerable.from(user.clients).where(c => c.talking_client_id != "").any()) {
                 user.is_joined = false;
+                // ミュート、共有状態をリセット
+                user.is_mute = false;
+                user.is_sharing_display = false;
             }
         });
         // ウィジェット更新
@@ -616,6 +660,8 @@ async function activate(app : JupyterFrontEnd) {
                 joining_users : []
             }
             sfuClientManager.sendPushToWaitingChannel(pushData);
+            // 待機ユーザーリスト非表示
+            waitingUserListWidget.hide();
             // -> 呼び出し中
             changeUserState(UserState.Calling);
         } else {
@@ -679,14 +725,15 @@ async function activate(app : JupyterFrontEnd) {
             return false;
         }
         // 通話画面に変更を反映
-        ownClient.is_sharing_display = true;
+        ownUser.is_sharing_display = true;
         // ウィジェット更新
         updateWidgets();
         // 自身の情報を送信
-        let pushData : ClientPushData = {
-            kind : PushKind.Client,
-            client : ownClient,
-            needs_response : false
+        let pushData : ShareDisplayPushData = {
+            kind : PushKind.ShareDisplay,
+            user_name : ownUser.name,
+            room_name : ownClient.talking_room_name,
+            is_sharing_display : true
         };
         sfuClientManager.sendPushToWaitingChannel(pushData);
         return true;
@@ -703,14 +750,15 @@ async function activate(app : JupyterFrontEnd) {
             return false;
         }
         // 通話画面に変更を反映
-        ownClient.is_sharing_display = false;
+        ownUser.is_sharing_display = false;
         // ウィジェット更新
         updateWidgets();
         // 自身の情報を送信
-        let pushData : ClientPushData = {
-            kind : PushKind.Client,
-            client : ownClient,
-            needs_response : false
+        let pushData : ShareDisplayPushData = {
+            kind : PushKind.ShareDisplay,
+            user_name : ownUser.name,
+            room_name : ownClient.talking_room_name,
+            is_sharing_display : false
         };
         sfuClientManager.sendPushToWaitingChannel(pushData);
         return true;
@@ -744,6 +792,32 @@ async function activate(app : JupyterFrontEnd) {
         }
     });
 
+    // ミュート設定
+    const setMute = async (isOn : boolean) => {
+        // 設定変更
+        ownUser.is_mute = isOn;
+        // ウィジェット更新
+        updateWidgets();
+        // 送信
+        let pushData : MutePushData = {
+            kind : PushKind.Mute,
+            user_name : ownUser.name,
+            room_name : ownClient.talking_room_name,
+            is_mute : isOn
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
+    };
+
+    // 通話画面でミュート切り替え
+    talkingViewWidget.onSetMute.connect(async (_, isOn) => {
+        await setMute(isOn);
+    });
+
+    // ミニ通話画面でミュート切り替え
+    miniTalkingViewWidget.onSetMute.connect(async (_, isOn) => {
+        await setMute(isOn);
+    });
+
     // 通話を切る処理
     const hungUp = async () => {
         // ローカルストリームを完全に閉じる
@@ -756,11 +830,17 @@ async function activate(app : JupyterFrontEnd) {
             // 招待中、参加中フラグを落とす
             u.is_invited = false;
             u.is_joined = false;
+            // ミュート、共有状態をリセット
+            u.is_mute = false;
+            u.is_sharing_display = false;
             // ユーザーのクライアントのチャンネルIdを削除
             u.clients.forEach(client => client.talking_client_id = "");
         });
         // 自身の通話クライアントIdを削除
         ownClient.talking_client_id = "";
+        // ミュート、共有状態をリセット
+        ownUser.is_mute = false;
+        ownUser.is_sharing_display = false;
         // ルーム名削除
         ownClient.talking_room_name = "";
         // 全てのストリームを削除する

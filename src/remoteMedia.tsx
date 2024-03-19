@@ -4,10 +4,12 @@ import React from "react";
 // リモートメディア(音声/動画)
 export function RemoteMedia({
     stream,
-    isDisplay
+    isDisplay,
+    isMute
 } : {
     stream : MediaStream,
-    isDisplay : boolean
+    isDisplay : boolean,
+    isMute : boolean
 }) : JSX.Element {
     const videoRef = React.useRef<HTMLVideoElement>(null);
 
@@ -24,6 +26,7 @@ export function RemoteMedia({
             className={isDisplay ? "nbwhisper-talking-view-display-video" : "nbwhisper-talking-view-hidden-video"}
             playsInline={true}
             autoPlay={true}
+            muted={isMute}
             ref={videoRef}
         />
     );
