@@ -396,7 +396,7 @@ async function activate(app : JupyterFrontEnd) {
         } else if(pushData.kind == PushKind.RefuseInvite) {
             // 招待の拒絶
             let refuseInvitePushData = data as RefuseInvitePushData;
-            if(invitation && refuseInvitePushData.room_name == invitation.room_name && refuseInvitePushData.target == ownUser.name) {
+            if(refuseInvitePushData.room_name == ownClient.talking_room_name && refuseInvitePushData.target == ownUser.name) {
                 // 該当のユーザーの招待フラグをOFFにする
                 let targetUser = Enumerable.from(allUsers).where(u => u.name == refuseInvitePushData.user_name).firstOrDefault();
                 if(targetUser) {
@@ -538,6 +538,10 @@ async function activate(app : JupyterFrontEnd) {
             }
         }
         addRemoteStream(stream);
+        if(ownClient.state == UserState.Calling) {
+            // -> 通話中
+            changeUserState(UserState.Talking);
+        }
         // ウィジェット更新
         updateWidgets();
     });

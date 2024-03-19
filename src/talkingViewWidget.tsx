@@ -5,6 +5,7 @@ import { Signal } from '@lumino/signaling';
 import { WaitingUserList } from './waitingUserList';
 import Enumerable from 'linq';
 import { RemoteMedia } from './remoteMedia';
+import { UserState } from './userState';
 
 // 参加者リスト
 export function TalkingUserList({
@@ -195,8 +196,7 @@ export class TalkingViewWidget extends ReactWidget {
                 <div className='nbwhisper-talking-view-main'>
                     <div className='nbwhisper-talking-view-display-area'>
                         {
-                            // 招待中のメンバーが存在しているか？
-                            Enumerable.from(this._users).where(u => u.is_invited).any() ?
+                            this._ownUser.getState() == UserState.Calling ?
                             (
                                 <div>
                                     <div className='nbwhisper-talking-view-info-text'>
