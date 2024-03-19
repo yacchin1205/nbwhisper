@@ -1,12 +1,7 @@
 import * as React from 'react';
 import { ReactWidget } from '@jupyterlab/apputils';
-
-export const DialogStyle = {
-    Plain:  1,
-    Join:   2
-} as const;
-
-export type DialogStyle = typeof DialogStyle[keyof typeof DialogStyle]
+import { generateUuid } from './uuid';
+import Enumerable from 'linq';
 
 export interface IAskDialogOptions {
     body : string;
@@ -14,135 +9,121 @@ export interface IAskDialogOptions {
     subBody2 : string;
     ok : string;
     cancel : string;
-    style : DialogStyle;
+}
+
+// ダイアログ
+export function DialogUnit({
+    id,
+    options,
+    onOk,
+    onCancel
+} : {
+    id : string,
+    options : IAskDialogOptions,
+    onOk : (id : string) => void,
+    onCancel : (id : string) => void
+}) : JSX.Element {
+    return (
+        <div>
+            <div className='nbwhisper-overlay nbwhisper-frontmost'>
+                <div className='nbwhisper-dialog-base'>
+                    {
+                        options.body != "" &&
+                        <div className='nbwhisper-dialog-body'>
+                            { options.body }
+                        </div>
+                    }
+                    {
+                        options.subBody1 != "" &&
+                        <div className='nbwhisper-dialog-subbody'>
+                            { options.subBody1 }
+                        </div>
+                    }
+                    {
+                        options.subBody2 != "" &&
+                        <div className='nbwhisper-dialog-subbody'>
+                            { options.subBody2 }
+                        </div>
+                    }
+                    <div className='nbwhisper-dialog-buttons'>
+                        {
+                            options.cancel != "" &&
+                            <div 
+                                className={'nbwhisper-button nbwhisper-button-cancel'}
+                                onClick={() => onCancel(id)}
+                            >
+                                <span>{ options.cancel }</span>
+                            </div>                    
+                        }
+                        {
+                            options.ok != "" &&
+                            <div 
+                                className={'nbwhisper-button nbwhisper-button-normal'}
+                                onClick={() => onOk(id)}
+                            >
+                                <span>{ options.ok }</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div> 
+        </div>
+    );
+}
+
+interface DialogUnitParam {
+    id : string;
+    options : IAskDialogOptions;
 }
 
 // ダイアログ類
 export class DialogWidget extends ReactWidget {
-    private _isDialogVisible = false;
-    private _body = "";
-    private _subBody1 = "";
-    private _subBody2 = "";
-    private _ok = "";
-    private _cancel = "";
-    private _style : DialogStyle = DialogStyle.Plain;
-    private _resolve : any;
+
+    private _dialogUnits : DialogUnitParam[] = [];
+    private _resolves : {[id : string] : any} = {};
 
     constructor() {
         super();
     }
 
     public showAskDialog(options : IAskDialogOptions) {
-        this._isDialogVisible = true;
-        this._body = options.body;
-        this._subBody1 = options.subBody1;
-        this._subBody2 = options.subBody2;
-        this._ok = options.ok;
-        this._cancel = options.cancel;
-        this._style = options.style;
+        let id = generateUuid();
+        this._dialogUnits.push({
+            id : id,
+            options : options
+        });
         this.update();
         return new Promise<boolean>(resolve => {
-            this._resolve = resolve;
+            this._resolves[id] = resolve;
         });
     }
 
-    private _hideDialog() {
-        this._isDialogVisible = false;
-        this._body = "";
-        this._subBody1 = "";
-        this._subBody2 = "";
-        this._ok = "";
-        this._cancel = "";
-        this.update();
+    private _onOk(id : string) {
+        this._deside(id, true);
     }
 
-    private _onOk() {
-        this._resolve(true);
+    private _onCancel(id : string) {
+        this._deside(id, false);
     }
 
-    private _onCancel() {
-        this._resolve(false);
+    private _deside(id : string, isOk : boolean) {
+        let remove = Enumerable.from(this._dialogUnits).where(d => d.id == id).firstOrDefault();
+        if(remove) {
+            let removeIndex = this._dialogUnits.indexOf(remove);
+            this._dialogUnits.splice(removeIndex, 1);
+            this.update();
+            if(id in this._resolves) {
+                this._resolves[id](isOk);
+            }
+        }
     }
 
     render(): JSX.Element {
         return (
             <div>
-                { 
-                    this._isDialogVisible && 
-                    <div className='nbwhisper-overlay nbwhisper-frontmost'>
-                        <div className='nbwhisper-dialog-base'>
-                            {
-                                this._body != "" &&
-                                <div className='nbwhisper-dialog-body'>
-                                    { this._body }
-                                </div>
-                            }
-                            {
-                                this._subBody1 != "" &&
-                                <div className='nbwhisper-dialog-subbody'>
-                                    { this._subBody1 }
-                                </div>
-                            }
-                            {
-                                this._subBody2 != "" &&
-                                <div className='nbwhisper-dialog-subbody'>
-                                    { this._subBody2 }
-                                </div>
-                            }
-                            <div className='nbwhisper-dialog-buttons'>
-                                {
-                                    this._cancel != "" && this._style == DialogStyle.Plain &&
-                                    <div 
-                                        className={'nbwhisper-button nbwhisper-button-cancel'}
-                                        onClick={() => {
-                                            this._hideDialog();
-                                            this._onCancel();
-                                        }}
-                                    >
-                                        <span>{ this._cancel }</span>
-                                    </div>                    
-                                }
-                                {
-                                    this._cancel != "" && this._style == DialogStyle.Join &&
-                                    <div 
-                                        className={'nbwhisper-button nbwhisper-button-not-join'}
-                                        onClick={() => {
-                                            this._hideDialog();
-                                            this._onCancel();
-                                        }}
-                                    >
-                                        <span className='nbwhisper-button-not-join-icon' />
-                                        <span className='nbwhisper-button-not-join-text'>{ this._cancel }</span>
-                                    </div>                    
-                                }
-                                {
-                                    this._ok != "" && this._style == DialogStyle.Plain &&
-                                    <div 
-                                        className={'nbwhisper-button nbwhisper-button-normal'}
-                                        onClick={() => {
-                                            this._hideDialog();
-                                            this._onOk();
-                                        }}
-                                    >
-                                        <span>{ this._ok }</span>
-                                    </div>
-                                }
-                                {
-                                    this._ok != "" && this._style == DialogStyle.Join &&
-                                    <div 
-                                        className={'nbwhisper-button nbwhisper-button-join'}
-                                        onClick={() => {
-                                            this._hideDialog();
-                                            this._onOk();
-                                        }}
-                                    >
-                                        <span className='nbwhisper-button-join-icon' />
-                                        <span className='nbwhisper-button-join-text'>{ this._ok }</span>
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    </div> 
+                {
+                    this._dialogUnits.map(x => <DialogUnit key={x.id} id={x.id} options={x.options} 
+                        onOk={(id) => this._onOk(id)} onCancel={(id) => this._onCancel(id)} />)
                 }
             </div>
         );

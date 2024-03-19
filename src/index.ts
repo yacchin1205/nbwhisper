@@ -9,7 +9,7 @@ import { Widget } from '@lumino/widgets';
 import { Client, User, Invitation } from './user';
 import { UserState } from './userState';
 import { TalkingViewWidget } from './talkingViewWidget';
-import { DialogStyle, DialogWidget } from './dialogWidget';
+import { DialogWidget } from './dialogWidget';
 import Enumerable from 'linq';
 import { MiniTalkingViewWidget } from './miniTalkingViewWidget';
 import { SfuClientManager, SfuClientEvent } from './sfuClientManager';
@@ -277,8 +277,7 @@ async function activate(app : JupyterFrontEnd) {
             subBody1: subBody,
             subBody2: "",
             ok: "送信",
-            cancel: "キャンセル",
-            style: DialogStyle.Plain
+            cancel: "キャンセル"
         });
     };
 
@@ -291,8 +290,7 @@ async function activate(app : JupyterFrontEnd) {
             subBody1: subBody,
             subBody2: "",
             ok: "送信",
-            cancel: "キャンセル",
-            style: DialogStyle.Plain
+            cancel: "キャンセル"
         });
     };
 
@@ -874,7 +872,26 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // ミニ通話画面で最大化ボタンを押したときの処理
-    miniTalkingViewWidget.onMaximizeTalkingView.connect(() => {
+    miniTalkingViewWidget.onMaximizeTalkingView.connect(async () => {
+        if(ownUser.is_sharing_display) {
+            // 共有中は最大化できないので、共有を停止するか聞く
+            let reply = await dialogWidget.showAskDialog({
+                body: `画面共有中は通話画面を開けません。画面共有を停止して通話画面を開きますか？`,
+                subBody1: "",
+                subBody2: "",
+                ok: "OK",
+                cancel: "キャンセル"
+            });
+            if(reply) {
+                // ダイアログの確定前に、共有が切られている or 通話が終了している可能性があるのでチェック
+                if(!ownUser.is_sharing_display || ownClient.talking_room_name == "") return;
+                // 共有停止
+                await finishSharingDisplay();
+            } else {
+                // キャンセル
+                return;
+            }
+        }
         talkingViewWidget.showWidget();
         miniTalkingViewWidget.hide();
     });
