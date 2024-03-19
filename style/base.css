@@ -759,11 +759,18 @@
     background-size: 21px 21px;
 }
 
-.nbwhisper-mini-talking-view-display-palette {
+.nbwhisper-mini-talking-view-display-palette.shown {
     position: fixed;
     top: 92px;
     right: 64px;
     height: 144px;
+    z-index: 10000;
+}
+
+.nbwhisper-mini-talking-view-display-palette.hidden {
+    position: fixed;
+    bottom: 0px;
+    left: 0px;
     z-index: 10000;
 }
 

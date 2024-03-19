@@ -82,7 +82,9 @@ export class MiniTalkingViewWidget extends ReactWidget {
                             onClick={() => this._maximizeTakingView()} />
                     </div>
                 </div>
-                <div className='nbwhisper-mini-talking-view-display-palette'>
+                <div className={`nbwhisper-mini-talking-view-display-palette ${
+                    Enumerable.from(this._users).where(u => u.is_joined && u.is_sharing_display).any() ? 'shown' : 'hidden'
+                }`}>
                     {
                         !this._isDisplayAreaVisible &&
                         <div className='nbwhisper-mini-talking-view-display-palette-opener' onClick={() => this._openDisplayArea()}/>
