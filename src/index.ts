@@ -305,6 +305,8 @@ async function activate(app : JupyterFrontEnd) {
 
     // 自身のユーザー状態を更新する
     const changeUserState = (newState : UserState) => {
+        if(ownClient.state == newState) return;
+        console.log("state: " + ownClient.state + " -> " + newState);
         ownClient.state = newState;
         let pushData : ClientPushData = {
             kind : PushKind.Client,
@@ -413,6 +415,12 @@ async function activate(app : JupyterFrontEnd) {
                 let targetUser = Enumerable.from(allUsers).where(u => u.name == refuseInvitePushData.user_name).firstOrDefault();
                 if(targetUser) {
                     targetUser.is_invited = false;
+                }
+                if(ownClient.state == UserState.Calling && !Enumerable.from(allUsers).where(u => u.is_invited).any()) {
+                    // 呼び出し中に招待中のユーザーがいなくなった場合は招待を抜ける
+                    await hungUp();
+                    // 通話画面を閉じる
+                    talkingViewWidget.hideWidget();
                 }
                 // ウィジェット更新
                 updateWidgets(); 
