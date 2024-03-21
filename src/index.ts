@@ -628,6 +628,14 @@ async function activate(app : JupyterFrontEnd) {
         // -> 通話リクエスト確認中
         changeUserState(UserState.Confirming);
         if(await showRequestTalkingDialog(users)) {
+            // 現在の状態が招待可能なユーザーのみ対象とする
+            users = Enumerable.from(users).where(u => u.canInvite()).toArray();
+            if(users.length == 0) {
+                alert("送信先が通話中のため通話リクエストを送信できません");
+                // -> 待機中
+                changeUserState(UserState.Standby);
+                return;
+            }
             // オーディオストリーム取得
             let stream = await getAudioStream(dummyCanvasWidget);
             if(!stream) {
