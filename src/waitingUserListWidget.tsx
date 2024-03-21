@@ -3,6 +3,7 @@ import { User } from './user';
 import { ReactWidget } from '@jupyterlab/apputils';
 import { Signal } from '@lumino/signaling';
 import { WaitingUserList } from './waitingUserList';
+import Draggable from 'react-draggable';
 import Enumerable from 'linq';
 
 // 待機ユーザーリスト表示ボタン
@@ -83,25 +84,29 @@ export class WaitingUserListWidget extends ReactWidget {
 
     render(): JSX.Element {
         return (
-            <div>
-                <WaitingUserListButton 
-                    isListVisible={this._isListVisible}
-                    onClick={() => this.setListVisible(!this._isListVisible)}
-                />
-                { 
-                    this._isListVisible && 
-                    <div className='nbwhisper-waiting-user-list-dialog'>
-                        <WaitingUserList 
-                            users={this._users}
-                            onSelect={(user) => this._onSelectUser(user)}
-                            optionalClassName='nbwhisper-waiting-user-list-container'
+            <div className='nbwhisper-waiting-user-list-widget'>
+                <Draggable>
+                    <div>
+                        <WaitingUserListButton 
+                            isListVisible={this._isListVisible}
+                            onClick={() => this.setListVisible(!this._isListVisible)}
                         />
-                        <RequestTalkingButton
-                            targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
-                            onClick={() => this._requestTalking()}
-                        />
+                        { 
+                            this._isListVisible && 
+                            <div className='nbwhisper-waiting-user-list-dialog'>
+                                <WaitingUserList 
+                                    users={this._users}
+                                    onSelect={(user) => this._onSelectUser(user)}
+                                    optionalClassName='nbwhisper-waiting-user-list-container'
+                                />
+                                <RequestTalkingButton
+                                    targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
+                                    onClick={() => this._requestTalking()}
+                                />
+                            </div>
+                        }
                     </div>
-                }
+                </Draggable>
             </div>
         );
     }

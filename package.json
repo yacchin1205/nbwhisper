@@ -61,7 +61,8 @@
     "@jupyterlab/application": "^4.0.0",
     "@jupyterlab/coreutils": "^6.0.0",
     "@jupyterlab/services": "^7.0.0",
-    "linq": "^4.0.2"
+    "linq": "^4.0.2",
+    "react-draggable": "^4.4.6"
   },
   "devDependencies": {
     "@jupyterlab/builder": "^4.0.0",
