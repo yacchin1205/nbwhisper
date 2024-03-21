@@ -692,6 +692,12 @@ async function activate(app : JupyterFrontEnd) {
     // 通話画面で「参加をリクエスト」ボタンをクリックした
     talkingViewWidget.onResuestJoining.connect(async (_, users) => {
         if(await showRequestJoiningDialog(users)) {
+            // 現在の状態が招待可能なユーザーのみ対象とする
+            users = Enumerable.from(users).where(u => u.canInvite()).toArray();
+            if(users.length == 0) {
+                alert("送信先が通話中のため参加リクエストを送信できません");
+                return;
+            }
             // 通話画面の参加者リストページをリセット
             talkingViewWidget.changeUserListPage(0);
             // 現在の参加者
