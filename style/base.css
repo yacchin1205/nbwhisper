@@ -18,6 +18,18 @@
     z-index: 10000;
 }
 
+.nbwhisper-waiting-user-list-hidden-text {
+    position: fixed;
+    left: 40px;
+    bottom: 32px;
+    display: table;
+    padding: 4px;
+    font-size: 16px;
+    background-color: rgba(110, 110, 110, 0.4);
+    color: #4169e1;
+    z-index: 10000;
+}
+
 .nbwhisper-waiting-user-list-button {
     position: absolute;
     bottom: 32px;

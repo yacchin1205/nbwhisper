@@ -1,10 +1,11 @@
 import * as React from 'react';
-import { User } from './user';
+import { Client, User } from './user';
 import { ReactWidget } from '@jupyterlab/apputils';
 import { Signal } from '@lumino/signaling';
 import { WaitingUserList } from './waitingUserList';
 import Draggable from 'react-draggable';
 import Enumerable from 'linq';
+import { UserState } from './userState';
 
 // 待機ユーザーリスト表示ボタン
 export function WaitingUserListButton({
@@ -56,12 +57,16 @@ export class WaitingUserListWidget extends ReactWidget {
     
     private _isListVisible = false;
     private _users : User[];
+    private _ownUser : User;
+    private _ownClient : Client;
 
     public onRequestTalking = new Signal<WaitingUserListWidget, User[]>(this);
 
-    constructor(users : User[]) {
+    constructor(users : User[], ownUser : User, ownClient : Client) {
         super();
         this._users = users;
+        this._ownUser = ownUser;
+        this._ownClient = ownClient;
     }
 
     setListVisible(value : boolean) {
@@ -82,32 +87,50 @@ export class WaitingUserListWidget extends ReactWidget {
         this.update();
     }
 
+    _isVisibleOtherClientsTalking() {
+        // 自クライアントは呼び出し中/通話中でなく、自身の他のクライアントが呼び出し中/通話中のとき、
+        // 「他タブ・ウィンドウで通話中」テキストを表示して、ボタンとリストを非表示にする。
+        if(this._ownClient.state != UserState.Talking && this._ownClient.state != UserState.Calling) {
+            let userState = this._ownUser.getState();
+            return userState == UserState.Talking || userState == UserState.Calling;
+        }
+        return false;
+    }
+
     render(): JSX.Element {
         return (
-            <div className='nbwhisper-waiting-user-list-widget'>
-                <Draggable>
-                    <div>
-                        <WaitingUserListButton 
-                            isListVisible={this._isListVisible}
-                            onClick={() => this.setListVisible(!this._isListVisible)}
-                        />
-                        { 
-                            this._isListVisible && 
-                            <div className='nbwhisper-waiting-user-list-dialog'>
-                                <WaitingUserList 
-                                    users={this._users}
-                                    onSelect={(user) => this._onSelectUser(user)}
-                                    optionalClassName='nbwhisper-waiting-user-list-container'
-                                />
-                                <RequestTalkingButton
-                                    targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
-                                    onClick={() => this._requestTalking()}
-                                />
-                            </div>
-                        }
+            <React.Fragment>
+                <div className='nbwhisper-waiting-user-list-widget' hidden={this._isVisibleOtherClientsTalking()}>
+                    <Draggable>
+                        <div>
+                            <WaitingUserListButton 
+                                isListVisible={this._isListVisible}
+                                onClick={() => this.setListVisible(!this._isListVisible)}
+                            />
+                            { 
+                                this._isListVisible && 
+                                <div className='nbwhisper-waiting-user-list-dialog'>
+                                    <WaitingUserList 
+                                        users={this._users}
+                                        onSelect={(user) => this._onSelectUser(user)}
+                                        optionalClassName='nbwhisper-waiting-user-list-container'
+                                    />
+                                    <RequestTalkingButton
+                                        targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
+                                        onClick={() => this._requestTalking()}
+                                    />
+                                </div>
+                            }
+                        </div>
+                    </Draggable>
+                </div>
+                {
+                    this._isVisibleOtherClientsTalking() &&
+                    <div className="nbwhisper-waiting-user-list-hidden-text" >
+                        他タブ・ウィンドウで通話中
                     </div>
-                </Draggable>
-            </div>
+                }
+            </React.Fragment>
         );
     }
 }

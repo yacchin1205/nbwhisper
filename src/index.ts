@@ -183,8 +183,9 @@ async function activate(app : JupyterFrontEnd) {
     // 自身のクライアント情報
     let ownClient : Client = new Client();
     ownClient.user_name = username;
+    console.log("user name == " + ownClient.user_name);
     //TEST 別ユーザー扱いにする
-    ownClient.user_name += generateUuid().substring(0, 8);
+    // ownClient.user_name += generateUuid().substring(0, 8);
 
     // ローカルストリーム
     let localStream : MediaStream | null = null;
@@ -202,7 +203,7 @@ async function activate(app : JupyterFrontEnd) {
     let allUsers : User[] = [];
 
     // 待機ユーザーリストウィジェット
-    const waitingUserListWidget = new WaitingUserListWidget(allUsers);
+    const waitingUserListWidget = new WaitingUserListWidget(allUsers, ownUser, ownClient);
     Widget.attach(waitingUserListWidget, document.body);
 
     // ミニ通話画面ウィジェット
