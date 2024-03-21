@@ -475,8 +475,6 @@ async function activate(app : JupyterFrontEnd) {
         if(invitation) {
             // 招待情報のルーム名に参加しているユーザーの存在を確認する
             let roomName = invitation.room_name;
-            console.log(roomName)
-            console.log(allUsers)
             if(Enumerable.from(allUsers).where(u => u.isJoiningTalkingRoom(roomName)).any()) {
                 isAliveTalking = true;
             }
@@ -601,7 +599,7 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 通話チャンネルからクライアントが離脱した場合
-    sfuClientManager.on(SfuClientEvent.ClientLeaveFromTalking, (clientId) => {
+    sfuClientManager.on(SfuClientEvent.ClientLeaveFromTalking, async (clientId) => {
         // 該当のクライアント情報から通話チャンネルIdを削除
         allUsers.forEach(user => {
             let targetClients = Enumerable.from(user.clients).where(c => c.talking_client_id == clientId).toArray();
@@ -614,6 +612,13 @@ async function activate(app : JupyterFrontEnd) {
                 user.is_sharing_display = false;
             }
         });
+        if(ownClient.state == UserState.Talking && !Enumerable.from(allUsers).where(u => u.is_joined).any()) {
+            // 通話中に自身以外の参加者がいなくなった場合は通話終了
+            await hungUp();
+            talkingViewWidget.hideWidget();
+            miniTalkingViewWidget.hide();
+            alert("通話が終了されました")
+        }
         // ウィジェット更新
         updateWidgets();
     });
