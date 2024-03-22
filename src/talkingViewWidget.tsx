@@ -107,7 +107,7 @@ export function RequestJoiningButton({
 // 通話画面ウィジェット
 export class TalkingViewWidget extends ReactWidget {
     private _isInnerVisible = false;
-    private _isUserListVisible = false;
+    private _isUserListVisible = true;
     private _userListPage = 0;
 
     private _users! : User[];
@@ -191,12 +191,13 @@ export class TalkingViewWidget extends ReactWidget {
     }
     
     render(): JSX.Element {
+        let isCalling = this._ownUser.getState() == UserState.Calling;
         return (
             <div className={`nbwhisper-talking-view ${this._isInnerVisible ? 'active' : 'leave'}`}>
                 <div className='nbwhisper-talking-view-main'>
                     <div className='nbwhisper-talking-view-display-area'>
                         {
-                            this._ownUser.getState() == UserState.Calling ?
+                            isCalling ?
                             (
                                 <div>
                                     <div className='nbwhisper-talking-view-info-text'>
@@ -238,88 +239,91 @@ export class TalkingViewWidget extends ReactWidget {
                             {Enumerable.from(this._users).where(u => u.is_sharing_display).first().name}の画面
                         </div>
                     }
-                    <div className={`nbwhisper-talking-view-user-list-area ${this._isUserListVisible ? 'active' : 'leave'}`}>
-                        {
-                            this._userListPage == 0 &&
-                            <React.Fragment>
-                                <div className='nbwhisper-talking-view-user-list-header'>
-                                    <div className='nbwhisper-talking-view-user-list-header-caption'>
-                                        参加者
+                    {
+                        !isCalling &&
+                        <div className={`nbwhisper-talking-view-user-list-area ${this._isUserListVisible ? 'active' : 'leave'}`}>
+                            {
+                                this._userListPage == 0 &&
+                                <React.Fragment>
+                                    <div className='nbwhisper-talking-view-user-list-header'>
+                                        <div className='nbwhisper-talking-view-user-list-header-caption'>
+                                            参加者
+                                        </div>
+                                        <div className='nbwhisper-talking-view-user-list-header-close-button'
+                                            onClick={() => this._hideUserList()}/>
                                     </div>
-                                    <div className='nbwhisper-talking-view-user-list-header-close-button'
-                                        onClick={() => this._hideUserList()}/>
-                                </div>
-                                <TalkingUserList
-                                    users={this._users}
-                                    onCancel={(user) => this._onCancelCallingUser(user)}
-                                />
-                                <div className='nbwhisper-talking-view-user-list-footer'>
-                                    <div className='nbwhisper-button nbwhisper-button-normal nbwhisper-talking-view-user-list-add-member-button'
-                                        onClick={() => this._changeUserListPage(1)}>
-                                        <div className='nbwhisper-talking-view-user-list-add-member-button-icon' />
-                                        <span>参加者を追加</span>
+                                    <TalkingUserList
+                                        users={this._users}
+                                        onCancel={(user) => this._onCancelCallingUser(user)}
+                                    />
+                                    <div className='nbwhisper-talking-view-user-list-footer'>
+                                        <div className='nbwhisper-button nbwhisper-button-normal nbwhisper-talking-view-user-list-add-member-button'
+                                            onClick={() => this._changeUserListPage(1)}>
+                                            <div className='nbwhisper-talking-view-user-list-add-member-button-icon' />
+                                            <span>参加者を追加</span>
+                                        </div>
                                     </div>
-                                </div>
-                            </React.Fragment>
-                        }
-                        {
-                            this._userListPage == 1 &&
-                            <React.Fragment>
-                                <div className='nbwhisper-talking-view-user-list-header'>
-                                    <div className='nbwhisper-talking-view-user-list-header-back-button'
-                                        onClick={() => this._changeUserListPage(0)} />
-                                    <div className='nbwhisper-talking-view-user-list-header-caption'>
-                                        参加者を追加
+                                </React.Fragment>
+                            }
+                            {
+                                this._userListPage == 1 &&
+                                <React.Fragment>
+                                    <div className='nbwhisper-talking-view-user-list-header'>
+                                        <div className='nbwhisper-talking-view-user-list-header-back-button'
+                                            onClick={() => this._changeUserListPage(0)} />
+                                        <div className='nbwhisper-talking-view-user-list-header-caption'>
+                                            参加者を追加
+                                        </div>
+                                        <div className='nbwhisper-talking-view-user-list-header-close-button'
+                                            onClick={() => this._hideUserList()}/>
                                     </div>
-                                    <div className='nbwhisper-talking-view-user-list-header-close-button'
-                                        onClick={() => this._hideUserList()}/>
-                                </div>
-                                <WaitingUserList
-                                    users={Enumerable.from(this._users).where(u => !u.is_invited && !u.is_joined).toArray()}
-                                    onSelect={(user) => this._onSelectUser(user)}
-                                    optionalClassName='nbwhisper-talking-view-user-list-container'
-                                />
-                                <RequestJoiningButton
-                                    targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
-                                    onClick={() => this._requestJoining()}
-                                />
-                            </React.Fragment>
-                        }
-                    </div>
+                                    <WaitingUserList
+                                        users={Enumerable.from(this._users).where(u => !u.is_invited && !u.is_joined).toArray()}
+                                        onSelect={(user) => this._onSelectUser(user)}
+                                        optionalClassName='nbwhisper-talking-view-user-list-container'
+                                    />
+                                    <RequestJoiningButton
+                                        targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
+                                        onClick={() => this._requestJoining()}
+                                    />
+                                </React.Fragment>
+                            }
+                        </div>
+                    }
                 </div>
                 <div className='nbwhisper-talking-view-footer'>
                     <div className='nbwhisper-talking-view-left-buttons'>
-                        <div className='nbwhisper-talking-view-button nbwhisper-talking-view-close-button' 
-                            onClick={() => this._minimizeTalkingView()}/>
+                        <div className={`nbwhisper-talking-view-button nbwhisper-talking-view-close-button ${isCalling && 'disabled'}`}
+                            onClick={() => this._minimizeTalkingView()} title='通話画面を隠す'/>
                     </div>
                     <div className='nbwhisper-talking-view-center-buttons'>
                         {
                             this._ownUser.is_mute ?
                             <div className='nbwhisper-talking-view-button nbwhisper-talking-view-mute-off-button' 
-                                onClick={() => this._setMute(false)}/>
+                                onClick={() => this._setMute(false)} title='マイクをオン'/>
                             :
                             <div className='nbwhisper-talking-view-button nbwhisper-talking-view-mute-on-button' 
-                                onClick={() => this._setMute(true)}/>
+                                onClick={() => this._setMute(true)} title='マイクをオフ'/>
                         }
                         {
                             this._ownUser.is_sharing_display ?
-                            <div className='nbwhisper-talking-view-button nbwhisper-talking-view-share-display-off-button' 
-                                onClick={() => this._setSharingDisplay(false)}/>
+                            <div className={`nbwhisper-talking-view-button nbwhisper-talking-view-share-display-off-button ${isCalling && 'disabled'}`}
+                                onClick={() => this._setSharingDisplay(false)} title='画面共有を終了'/>
                             :
-                            <div className='nbwhisper-talking-view-button nbwhisper-talking-view-share-display-on-button' 
-                                onClick={() => this._setSharingDisplay(true)}/>
+                            <div className={`nbwhisper-talking-view-button nbwhisper-talking-view-share-display-on-button ${isCalling && 'disabled'}`} 
+                                onClick={() => this._setSharingDisplay(true)} title='画面を共有'/>
                         }
                         <div className='nbwhisper-talking-view-button nbwhisper-talking-view-hung-up-button' 
-                            onClick={() => this._onHungUp()} />
+                            onClick={() => this._onHungUp()} title='通話から退出'/>
                     </div>
                     <div className='nbwhisper-talking-view-right-buttons'>
                         {
                             this._isUserListVisible ?
-                            <div className='nbwhisper-talking-view-button nbwhisper-talking-view-hide-members-button'
-                                onClick={() => this._hideUserList()}/>
+                            <div className={`nbwhisper-talking-view-button nbwhisper-talking-view-hide-members-button ${isCalling && 'disabled'}`}
+                                onClick={() => this._hideUserList()} title='参加者を表示'/>
                             :
-                            <div className='nbwhisper-talking-view-button nbwhisper-talking-view-show-members-button'
-                                onClick={() => this._showUserList()}/>
+                            <div className={`nbwhisper-talking-view-button nbwhisper-talking-view-show-members-button ${isCalling && 'disabled'}`}
+                                onClick={() => this._showUserList()} title='参加者を隠す'/>
                         }
                     </div>
                 </div>

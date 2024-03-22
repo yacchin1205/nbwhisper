@@ -201,6 +201,8 @@ async function activate(app : JupyterFrontEnd) {
     let invitation : Invitation | null = null;
     // ユーザーリスト
     let allUsers : User[] = [];
+    // ユーザー情報との紐付け待ちの待機ユーザークライアント
+    let unregisteredWaitingClientIds : string[] = [];
 
     // 待機ユーザーリストウィジェット
     const waitingUserListWidget = new WaitingUserListWidget(allUsers, ownUser, ownClient);
@@ -329,6 +331,7 @@ async function activate(app : JupyterFrontEnd) {
     // 待機チャンネルにPushが送られた場合
     sfuClientManager.on(SfuClientEvent.PushFromWaiting, async (data : object) => {
         let pushData = data as PushData;
+        console.log("on push: " + pushData.kind);
         if(pushData.kind == PushKind.Client) {
             // クライアント情報
             let clientPushData = data as ClientPushData;
@@ -339,7 +342,9 @@ async function activate(app : JupyterFrontEnd) {
                 // 同一クライアントの場合はスルー
                 console.log("waiting client id: " + clientData.waiting_client_id + " is the same client.");
                 return;
-            } else if(clientData.user_name == ownUser.name) {
+            }
+            
+            if(clientData.user_name == ownUser.name) {
                 // 自分の情報の更新
                 console.log("waiting client id: " + clientData.waiting_client_id + " is mine. update own user.");
                 let existedClient = Enumerable.from(ownUser.clients).where(c => c.waiting_client_id == clientData.waiting_client_id).firstOrDefault();
@@ -347,8 +352,11 @@ async function activate(app : JupyterFrontEnd) {
                     // 既存のクライアントの場合データ更新
                     existedClient.update(clientData);
                 } else {
-                    // 新規クライアントの場合追加
-                    ownUser.clients.push(clientData);
+                    if(unregisteredWaitingClientIds.includes(clientData.waiting_client_id)) {
+                        // 新規クライアントの場合追加
+                        unregisteredWaitingClientIds = unregisteredWaitingClientIds.filter(x => x != clientData.waiting_client_id);
+                        ownUser.clients.push(clientData);
+                    }
                 }
             } else {
                 // 他ユーザーの情報更新
@@ -360,8 +368,11 @@ async function activate(app : JupyterFrontEnd) {
                         // 既存のクライアントの場合データ更新
                         existedClient.update(clientData);
                     } else {
-                        // 新規クライアントの場合追加
-                        ownUser.clients.push(clientData);
+                        if(unregisteredWaitingClientIds.includes(clientData.waiting_client_id)) {
+                            // 新規クライアントの場合追加
+                            unregisteredWaitingClientIds = unregisteredWaitingClientIds.filter(x => x != clientData.waiting_client_id);
+                            targetUser.clients.push(clientData);
+                        }
                     }
                     // このユーザーの通話チャンネルクライアントIdに該当するストリームが存在している場合、
                     // ユーザーを通話参加中にする
@@ -539,9 +550,20 @@ async function activate(app : JupyterFrontEnd) {
         }
     });
 
+    // 待機チャンネルにクライアントが参加した場合
+    sfuClientManager.on(SfuClientEvent.ClientJoinWaiting, (clientId : string) => {
+        console.log("add user clientId: " + clientId);
+        if(!unregisteredWaitingClientIds.includes(clientId)) {
+            // 紐付け待ちのクライアントIdに追加
+            unregisteredWaitingClientIds.push(clientId);
+        }
+    });
+
     // 待機チャンネルからクライアントが離脱した場合
     sfuClientManager.on(SfuClientEvent.ClientLeaveFromWaiting, (clientId : string) => {
         console.log("remove user clientId: " + clientId);
+        // 紐付け待ちのクライアントIdから削除
+        unregisteredWaitingClientIds = unregisteredWaitingClientIds.filter(x => x != clientId);
         // 抜けたClientを削除していく
         // 自身
         let removeIndexes : number[] = [];

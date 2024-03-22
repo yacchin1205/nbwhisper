@@ -4,8 +4,10 @@ import { requestAPI } from './handler';
 export class SfuClientEvent {
     // 待機チャンネルにプッシュがあった
     static readonly PushFromWaiting = "PushFromWaiting";
+    // 待機チャンネルに参加があった
+    static readonly ClientJoinWaiting = "ClientJoinWaiting";
     // 待機チャンネルから抜けた
-    static readonly ClientLeaveFromWaiting = "ClientLeaveFromWaiting"
+    static readonly ClientLeaveFromWaiting = "ClientLeaveFromWaiting";
     // 通話チャンネルのストリームが届いた
     static readonly TrackStreamOnTalking = "TrackStreamOnTalking";
     // 通話チャンネルのストリームがなくなった
@@ -67,6 +69,7 @@ export class SfuClientManager {
                 channelId,
                 this.apiKey,
                 (data) => this.onPushedWaitingChannel(data),
+                (clientId) => this.onClientJoinWaitingChannel(clientId),
                 (clientId) => this.onClientLeftWaitingChannel(clientId)
             );
             // 接続する
@@ -84,6 +87,10 @@ export class SfuClientManager {
 
     onPushedWaitingChannel(data : object) {
         this.sendEvent(SfuClientEvent.PushFromWaiting, data);
+    }
+
+    onClientJoinWaitingChannel(cliendId : string) {
+        this.sendEvent(SfuClientEvent.ClientJoinWaiting, cliendId);
     }
 
     onClientLeftWaitingChannel(clientId : string) {
@@ -144,6 +151,7 @@ class PushChannelClient {
     private channelId : string;
     private apiKey : string;
     private onPushed! : (data : object) => void;
+    private onClientJoined : (clientId : string) => void;
     private onClientLeft! : (cliendId : string) => void;
 
     constructor(
@@ -152,6 +160,7 @@ class PushChannelClient {
         channelId : string,
         apiKey : string,
         onPushed : (data : object) => void,
+        onClientJoined : (clientId : string) => void,
         onClientLeft : (cliendId : string) => void
     ) {
         this.sora = sora;
@@ -160,6 +169,7 @@ class PushChannelClient {
         this.connection = this.sora.recvonly(this.channelId, this.metadata);
         this.apiKey = apiKey;
         this.onPushed = onPushed;
+        this.onClientJoined = onClientJoined;
         this.onClientLeft = onClientLeft;
 
         this.connection.on("notify", this.onNotify.bind(this));
@@ -183,9 +193,14 @@ class PushChannelClient {
 
     onNotify(e : any) {
         console.log(e)
-        if(e.event_type == "connection.created" && e.connection_id == this.connection.connectionId) {
-            // 接続完了
-            console.log("waiting room is connected.");
+        if(e.event_type == "connection.created") {
+            if(e.client_id == this.connection.clientId) {
+                // 自身の接続完了
+                console.log("waiting room is connected.");
+            } else {
+                // 新規メンバーの接続完了
+                this.onClientJoined(e.client_id);
+            }
         } else if(e.event_type == "connection.destroyed") {
             // メンバーが抜けた
             this.onClientLeft(e.client_id);
