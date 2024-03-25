@@ -560,7 +560,7 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 待機チャンネルからクライアントが離脱した場合
-    sfuClientManager.on(SfuClientEvent.ClientLeaveFromWaiting, (clientId : string) => {
+    sfuClientManager.on(SfuClientEvent.ClientLeaveFromWaiting, async (clientId : string) => {
         console.log("remove user clientId: " + clientId);
         // 紐付け待ちのクライアントIdから削除
         unregisteredWaitingClientIds = unregisteredWaitingClientIds.filter(x => x != clientId);
@@ -587,6 +587,12 @@ async function activate(app : JupyterFrontEnd) {
         }
         // Clientを持たなくなったユーザーを削除する
         removeUserIndexes.forEach(j => allUsers.splice(j, 1));
+        if(ownClient.state == UserState.Calling && !Enumerable.from(allUsers).where(u => u.is_invited).any()) {
+            // 呼び出し中に招待中のユーザーがいなくなった場合は招待を抜ける
+            await hungUp();
+            // 通話画面を閉じる
+            talkingViewWidget.hideWidget();
+        }
         // ウィジェット更新
         updateWidgets();
     });
