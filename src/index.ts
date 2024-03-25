@@ -114,6 +114,8 @@ function stopMediaStream(stream : MediaStream) {
 
 // プッシュの種別
 export class PushKind {
+    // 初回コンタクト
+    static readonly Contact = "Contact";
     // クライアント情報
     static readonly Client = "Client";
     // 招待
@@ -132,9 +134,12 @@ export class PushKind {
 interface PushData {
     kind : string;
 }
+interface ContactPushData extends PushData {
+    client : Client;
+    needs_response : boolean;
+}
 interface ClientPushData extends PushData {
     client : Client;
-    needs_response : boolean
 }
 interface InvitePushData extends PushData {
     target : string[];
@@ -201,8 +206,6 @@ async function activate(app : JupyterFrontEnd) {
     let invitation : Invitation | null = null;
     // ユーザーリスト
     let allUsers : User[] = [];
-    // ユーザー情報との紐付け待ちの待機ユーザークライアント
-    let unregisteredWaitingClientIds : string[] = [];
 
     // 待機ユーザーリストウィジェット
     const waitingUserListWidget = new WaitingUserListWidget(allUsers, ownUser, ownClient);
@@ -313,8 +316,7 @@ async function activate(app : JupyterFrontEnd) {
         ownClient.state = newState;
         let pushData : ClientPushData = {
             kind : PushKind.Client,
-            client : ownClient,
-            needs_response : false
+            client : ownClient
         }
         sfuClientManager.sendPushToWaitingChannel(pushData);
     };
@@ -332,10 +334,60 @@ async function activate(app : JupyterFrontEnd) {
     sfuClientManager.on(SfuClientEvent.PushFromWaiting, async (data : object) => {
         let pushData = data as PushData;
         console.log("on push: " + pushData.kind);
-        if(pushData.kind == PushKind.Client) {
+        if(pushData.kind == PushKind.Contact) {
+            // 初回コンタクト
+            let contactPushData = data as ContactPushData;
+            let needsResponse = contactPushData.needs_response;
+            let clientData = Object.assign(new Client(), contactPushData.client);
+
+            if(clientData.waiting_client_id == ownClient.waiting_client_id) {
+                // 同一クライアントの場合はスルー
+                console.log("waiting client id: " + clientData.waiting_client_id + " is the same client.");
+                return;
+            }
+
+            if(clientData.user_name == ownUser.name) {
+                // 自分の情報の更新
+                console.log("waiting client id: " + clientData.waiting_client_id + " is mine. update own user.");
+                if(!Enumerable.from(ownUser.clients).where(c => c.waiting_client_id == clientData.waiting_client_id).any()) {
+                    // 自身のクライアントを追加
+                    ownUser.clients.push(clientData);
+                }
+            } else {
+                // 他ユーザーの情報更新
+                console.log("waiting client id: " + clientData.waiting_client_id + " is other's. update all users.");
+                let targetUser = Enumerable.from(allUsers).where(u => u.name == clientData.user_name).firstOrDefault();
+                if(targetUser) {
+                    if(!Enumerable.from(targetUser.clients).where(c => c.waiting_client_id == clientData.waiting_client_id).any()) {
+                        // ユーザーのクライアント追加
+                        targetUser.clients.push(clientData);
+                    }
+                } else {
+                    // 新ユーザーの追加
+                    let newUser = new User();
+                    newUser.name = clientData.user_name;
+                    newUser.clients.push(clientData);
+                    allUsers.push(newUser);
+                }
+            }
+
+            // ウィジェット更新
+            updateWidgets();
+
+            if(needsResponse) {
+                // 自身の情報を送り返す
+                console.log("response my client.")
+                let pushData : ContactPushData = {
+                    kind : PushKind.Contact,
+                    client : ownClient,
+                    needs_response : false
+                };
+                sfuClientManager.sendPushToWaitingChannel(pushData);
+            }
+        }
+        else if(pushData.kind == PushKind.Client) {
             // クライアント情報
             let clientPushData = data as ClientPushData;
-            let needsResponse = clientPushData.needs_response
             let clientData = Object.assign(new Client(), clientPushData.client);
             
             if(clientData.waiting_client_id == ownClient.waiting_client_id) {
@@ -351,12 +403,6 @@ async function activate(app : JupyterFrontEnd) {
                 if(existedClient) {
                     // 既存のクライアントの場合データ更新
                     existedClient.update(clientData);
-                } else {
-                    if(unregisteredWaitingClientIds.includes(clientData.waiting_client_id)) {
-                        // 新規クライアントの場合追加
-                        unregisteredWaitingClientIds = unregisteredWaitingClientIds.filter(x => x != clientData.waiting_client_id);
-                        ownUser.clients.push(clientData);
-                    }
                 }
             } else {
                 // 他ユーザーの情報更新
@@ -367,12 +413,6 @@ async function activate(app : JupyterFrontEnd) {
                     if(existedClient) {
                         // 既存のクライアントの場合データ更新
                         existedClient.update(clientData);
-                    } else {
-                        if(unregisteredWaitingClientIds.includes(clientData.waiting_client_id)) {
-                            // 新規クライアントの場合追加
-                            unregisteredWaitingClientIds = unregisteredWaitingClientIds.filter(x => x != clientData.waiting_client_id);
-                            targetUser.clients.push(clientData);
-                        }
                     }
                     // このユーザーの通話チャンネルクライアントIdに該当するストリームが存在している場合、
                     // ユーザーを通話参加中にする
@@ -381,27 +421,10 @@ async function activate(app : JupyterFrontEnd) {
                         targetUser.is_joined = true;
                         targetUser.is_invited = false;
                     }
-                } else {
-                    // 新ユーザーの追加
-                    let newUser = new User();
-                    newUser.name = clientData.user_name;
-                    newUser.clients.push(clientData);
-                    allUsers.push(newUser);
                 }
             }
             // ウィジェット更新
             updateWidgets();
-
-            if(needsResponse) {
-                // 自身の情報を送り返す
-                console.log("response my client.")
-                let pushData : ClientPushData = {
-                    kind : PushKind.Client,
-                    client : ownClient,
-                    needs_response : false
-                };
-                sfuClientManager.sendPushToWaitingChannel(pushData);
-            }
         } else if(pushData.kind == PushKind.Invite) {
             // 招待
             let invitePushData = data as InvitePushData;
@@ -553,17 +576,11 @@ async function activate(app : JupyterFrontEnd) {
     // 待機チャンネルにクライアントが参加した場合
     sfuClientManager.on(SfuClientEvent.ClientJoinWaiting, (clientId : string) => {
         console.log("add user clientId: " + clientId);
-        if(!unregisteredWaitingClientIds.includes(clientId)) {
-            // 紐付け待ちのクライアントIdに追加
-            unregisteredWaitingClientIds.push(clientId);
-        }
     });
 
     // 待機チャンネルからクライアントが離脱した場合
     sfuClientManager.on(SfuClientEvent.ClientLeaveFromWaiting, async (clientId : string) => {
         console.log("remove user clientId: " + clientId);
-        // 紐付け待ちのクライアントIdから削除
-        unregisteredWaitingClientIds = unregisteredWaitingClientIds.filter(x => x != clientId);
         // 抜けたClientを削除していく
         // 自身
         let removeIndexes : number[] = [];
@@ -657,10 +674,18 @@ async function activate(app : JupyterFrontEnd) {
         // -> 通話リクエスト確認中
         changeUserState(UserState.Confirming);
         if(await showRequestTalkingDialog(users)) {
+            // 他タブで通話中は開始できない
+            let ownState = ownUser.getState();
+            if(ownState == UserState.Calling || ownState == UserState.Talking) {
+                alert("他のタブやウィンドウで通話中のため、新たに通話を開始することができません");
+                // -> 待機中
+                changeUserState(UserState.Standby);
+                return
+            }
             // 現在の状態が招待可能なユーザーのみ対象とする
             users = Enumerable.from(users).where(u => u.canInvite()).toArray();
             if(users.length == 0) {
-                alert("送信先が通話中のため通話リクエストを送信できません");
+                alert("送信先が通話中のため、通話リクエストを送信できません");
                 // -> 待機中
                 changeUserState(UserState.Standby);
                 return;
@@ -953,12 +978,12 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 自身のユーザー情報を初回プッシュ
-    let fistPushData : ClientPushData = {
-        kind : PushKind.Client,
+    let firstPushData : ContactPushData = {
+        kind : PushKind.Contact,
         client : ownClient,
         needs_response : true
     };
-    sfuClientManager.sendPushToWaitingChannel(fistPushData);
+    sfuClientManager.sendPushToWaitingChannel(firstPushData);
 }
 
 /**
