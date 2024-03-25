@@ -1,33 +1,17 @@
 import * as React from 'react';
 import { ReactWidget } from '@jupyterlab/apputils';
-import { User } from './user';
+import { Invitation } from './user';
 import { Signal } from '@lumino/signaling';
-import { UserState } from './userState';
 
 // 通話リクエストの通知
 export class RequestTalkingWidget extends ReactWidget {
 
-    private _ownUser : User;
-
-    private _body : string = "";
-    private _subBody1 : string = "";
-    private _subBody2 : string = "";
-
+    private _invitation : Invitation;
     public onDesideRequest = new Signal<RequestTalkingWidget, boolean>(this);
 
-    constructor(ownUser : User) {
+    constructor(invitation : Invitation) {
         super();
-        this._ownUser = ownUser;
-    }
-
-    public setup(userName : string, targetUserNames : string[], joiningUserNames : string[]) {
-        this._body = `${userName}から通話への参加リクエストが届きました。参加しますか？`;
-        this._subBody1 = `${targetUserNames.length}名にリクエスト中 :\n` + targetUserNames.join(", ");
-        if(joiningUserNames.length > 0) {
-            this._subBody2 =  `${joiningUserNames.length}名が参加中です :\n` + joiningUserNames.join(", ");
-        } else {
-            this._subBody2 = "";
-        }
+        this._invitation = invitation;
     }
 
     private _desideRequest(isOk : boolean) {
@@ -38,25 +22,21 @@ export class RequestTalkingWidget extends ReactWidget {
         return (
             <div>
                 { 
-                    this._ownUser.getState() == UserState.Invited && 
+                    this._invitation.is_active && 
                     <div className='nbwhisper-overlay'>
                         <div className='nbwhisper-dialog-base'>
+                            <div className='nbwhisper-dialog-body'>
+                                {`${this._invitation.from_user_name}から通話への参加リクエストが届きました。参加しますか？`}
+                            </div>
+                            <div className='nbwhisper-dialog-subbody'>
+                                {`${this._invitation.target_user_names.length}名にリクエスト中 :\n`}
+                                {`${this._invitation.target_user_names.join(", ")}`}
+                            </div>
                             {
-                                this._body != "" &&
-                                <div className='nbwhisper-dialog-body'>
-                                    { this._body }
-                                </div>
-                            }
-                            {
-                                this._subBody1 != "" &&
+                                this._invitation.joined_user_names.length > 0 &&
                                 <div className='nbwhisper-dialog-subbody'>
-                                    { this._subBody1 }
-                                </div>
-                            }
-                            {
-                                this._subBody2 != "" &&
-                                <div className='nbwhisper-dialog-subbody'>
-                                    { this._subBody2 }
+                                    {`${this._invitation.joined_user_names.length}名が参加中です :\n`}
+                                    {`${this._invitation.joined_user_names.join(", ")}`}
                                 </div>
                             }
                             <div className='nbwhisper-dialog-buttons'>

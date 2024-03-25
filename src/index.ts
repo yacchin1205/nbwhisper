@@ -203,7 +203,7 @@ async function activate(app : JupyterFrontEnd) {
     ownUser.name = ownClient.user_name;
     ownUser.clients.push(ownClient);
     // 招待情報
-    let invitation : Invitation | null = null;
+    let invitation : Invitation = new Invitation();
     // ユーザーリスト
     let allUsers : User[] = [];
     // 離脱済みクライアントId
@@ -227,7 +227,7 @@ async function activate(app : JupyterFrontEnd) {
     Widget.attach(dialogWidget, document.body);
 
     // 通話リクエスト通知ウィジェット
-    const requestTalkingWidget = new RequestTalkingWidget(ownUser);
+    const requestTalkingWidget = new RequestTalkingWidget(invitation);
     Widget.attach(requestTalkingWidget, document.body);
 
     // ダミーキャンバスウィジェット
@@ -440,13 +440,13 @@ async function activate(app : JupyterFrontEnd) {
             let invitePushData = data as InvitePushData;
             if(invitePushData.target.includes(ownUser.name)) {
                 // 自身が招待を受けた
-                // 招待情報を保持
-                invitation = new Invitation();
+                // 招待情報を更新
+                invitation.is_active = true;
                 invitation.room_name = invitePushData.room_name;
                 invitation.from_user_name = invitePushData.user_name;
                 invitation.from_talking_client_id = invitePushData.talking_client_id;
-                // ダイアログのセットアップ
-                requestTalkingWidget.setup(invitePushData.user_name, invitePushData.target, invitePushData.joining_users);
+                invitation.target_user_names = invitePushData.target;
+                invitation.joined_user_names = invitePushData.joining_users;
                 // -> 着信中
                 changeUserState(UserState.Invited);
                 // ウィジェット更新
@@ -473,13 +473,15 @@ async function activate(app : JupyterFrontEnd) {
         } else if(pushData.kind == PushKind.CancelInvite) {
             // 招待のキャンセル
             let cancelInvitePushData = data as CancelInvitePushData;
-            if(invitation && cancelInvitePushData.room_name == invitation.room_name && cancelInvitePushData.target == ownUser.name) {
-                // 招待をクリア
-                invitation = null;
-                // -> 待機中
-                changeUserState(UserState.Standby);
-                // ウィジェット更新
-                updateWidgets(); 
+            if(invitation.is_active && cancelInvitePushData.room_name == invitation.room_name) {
+                if(cancelInvitePushData.target == "" || cancelInvitePushData.target == ownUser.name) {
+                    // 全ユーザー対象、もしくは自身を対象とした招待のキャンセル
+                    invitation.is_active = false;
+                    // -> 待機中
+                    changeUserState(UserState.Standby);
+                    // ウィジェット更新
+                    updateWidgets(); 
+                }
             }
         } else if(pushData.kind == PushKind.ShareDisplay) {
             // 画面の共有切り替え
@@ -513,21 +515,21 @@ async function activate(app : JupyterFrontEnd) {
 
     // 通話リクエスト通知ウィジェットで決定した場合
     requestTalkingWidget.onDesideRequest.connect(async (_, isOk) => {
-        if(!invitation) return;
+        if(!invitation.is_active) {
+            // 招待自体がない
+            return;
+        }
 
-        // 招待が生きているか確認する
         let isAliveTalking = false;
-        if(invitation) {
-            // 招待情報のルーム名に参加しているユーザーの存在を確認する
-            let roomName = invitation.room_name;
-            if(Enumerable.from(allUsers).where(u => u.isJoiningTalkingRoom(roomName)).any()) {
-                isAliveTalking = true;
-            }
+        // 招待情報のルーム名に参加しているユーザーの存在を確認する
+        let roomName = invitation.room_name;
+        if(Enumerable.from(allUsers).where(u => u.isJoiningTalkingRoom(roomName)).any()) {
+            isAliveTalking = true;
         }
         if(!isAliveTalking) {
             alert("通話が終了したため、この招待は無効になりました");
-            // 招待情報をクリア
-            invitation = null;
+            // 招待を無効化
+            invitation.is_active = false;
             // -> 待機中
             changeUserState(UserState.Standby);
             // ウィジェット更新
@@ -558,8 +560,15 @@ async function activate(app : JupyterFrontEnd) {
             ownClient.talking_room_name = invitation.room_name;
             // 待機ユーザーリスト非表示
             waitingUserListWidget.hide();
-            // 招待情報をクリア
-            invitation = null;
+            // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
+            invitation.is_active = false;
+            let pushData : CancelInvitePushData = {
+                kind : PushKind.CancelInvite,
+                target : ownUser.name,
+                user_name : invitation.from_user_name,
+                room_name : invitation.room_name
+            }
+            await sfuClientManager.sendPushToWaitingChannel(pushData);
             // -> 通話中
             changeUserState(UserState.Talking);
             // ウィジェット更新
@@ -574,8 +583,8 @@ async function activate(app : JupyterFrontEnd) {
             };
             // 拒絶を通知する
             await sfuClientManager.sendPushToWaitingChannel(pushData);
-            // 招待情報をクリア
-            invitation = null;
+            // 招待を無効化
+            invitation.is_active = false;
             // -> 待機中
             changeUserState(UserState.Standby);
             // ウィジェット更新
@@ -931,6 +940,16 @@ async function activate(app : JupyterFrontEnd) {
         }
         // 切断する
         await sfuClientManager.disconnectFromTalkingChannel();
+        if(Enumerable.from(allUsers).where(u => u.is_invited).any()) {
+            // 招待しているユーザーがいる場合はキャンセルを送信する
+            let pushData : CancelInvitePushData = {
+                kind : PushKind.CancelInvite,
+                target : "",
+                user_name : ownUser.name,
+                room_name : ownClient.talking_room_name
+            };
+            await sfuClientManager.sendPushToWaitingChannel(pushData);
+        }
         allUsers.forEach(u => {
             // 招待中、参加中フラグを落とす
             u.is_invited = false;

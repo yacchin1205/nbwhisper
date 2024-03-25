@@ -87,10 +87,16 @@ export class User {
 
 // 招待情報
 export class Invitation {
+    // 有効か？
+    is_active : boolean = false;
     // ルーム名
     room_name : string = "";
     // 招待元ユーザー
     from_user_name : string = "";
     // 招待元ユーザークライアントId
     from_talking_client_id : string = "";
+    // 招待ユーザー名
+    target_user_names : string[] = [];
+    // 参加済みユーザー名
+    joined_user_names : string[] = [];
 } 
