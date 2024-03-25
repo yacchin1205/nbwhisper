@@ -206,6 +206,8 @@ async function activate(app : JupyterFrontEnd) {
     let invitation : Invitation | null = null;
     // ユーザーリスト
     let allUsers : User[] = [];
+    // 離脱済みクライアントId
+    let leftClientIds : string[] = [];
 
     // 待機ユーザーリストウィジェット
     const waitingUserListWidget = new WaitingUserListWidget(allUsers, ownUser, ownClient);
@@ -395,6 +397,14 @@ async function activate(app : JupyterFrontEnd) {
                 console.log("waiting client id: " + clientData.waiting_client_id + " is the same client.");
                 return;
             }
+
+            if(leftClientIds.includes(clientData.waiting_client_id)) {
+                // 離脱済みのクライアント情報が遅れて届いた
+                // この場合は無視する
+                console.log("waiting client id: " + clientData.waiting_client_id + " is left.");
+                leftClientIds = leftClientIds.filter(x => x != clientData.waiting_client_id);
+                return;
+            }
             
             if(clientData.user_name == ownUser.name) {
                 // 自分の情報の更新
@@ -581,13 +591,17 @@ async function activate(app : JupyterFrontEnd) {
     // 待機チャンネルからクライアントが離脱した場合
     sfuClientManager.on(SfuClientEvent.ClientLeaveFromWaiting, async (clientId : string) => {
         console.log("remove user clientId: " + clientId);
+        let isRemoved = false;
         // 抜けたClientを削除していく
         // 自身
         let removeIndexes : number[] = [];
         for(let i = ownUser.clients.length - 1; i >= 0; --i) {
             if(ownUser.clients[i].waiting_client_id == clientId) removeIndexes.push(i);
         }
-        removeIndexes.forEach(i => ownUser.clients.splice(i, 1));
+        if(removeIndexes.length > 0) {
+            removeIndexes.forEach(i => ownUser.clients.splice(i, 1));
+            isRemoved = true;
+        }
         // 他ユーザー
         let removeUserIndexes : number[] = [];
         for(let j = allUsers.length - 1; j >= 0; --j) {
@@ -596,19 +610,31 @@ async function activate(app : JupyterFrontEnd) {
             for(let i = user.clients.length - 1; i >= 0; --i) {
                 if(user.clients[i].waiting_client_id == clientId) removeIndexes.push(i);
             }
-            removeIndexes.forEach(i => user.clients.splice(i, 1));
-            if(user.clients.length <= 0) {
-                // Clientがなくなったユーザーを削除対象にする
-                removeUserIndexes.push(j);
+            if(removeIndexes.length > 0) {
+                isRemoved = true;
+                removeIndexes.forEach(i => user.clients.splice(i, 1));
+                if(user.clients.length <= 0) {
+                    // Clientがなくなったユーザーを削除対象にする
+                    removeUserIndexes.push(j);
+                }
             }
         }
         // Clientを持たなくなったユーザーを削除する
-        removeUserIndexes.forEach(j => allUsers.splice(j, 1));
-        if(ownClient.state == UserState.Calling && !Enumerable.from(allUsers).where(u => u.is_invited).any()) {
-            // 呼び出し中に招待中のユーザーがいなくなった場合は招待を抜ける
-            await hungUp();
-            // 通話画面を閉じる
-            talkingViewWidget.hideWidget();
+        if(removeUserIndexes.length > 0) {
+            removeUserIndexes.forEach(j => allUsers.splice(j, 1));
+            isRemoved = true;
+            if(ownClient.state == UserState.Calling && !Enumerable.from(allUsers).where(u => u.is_invited).any()) {
+                // 呼び出し中に招待中のユーザーがいなくなった場合は招待を抜ける
+                await hungUp();
+                // 通話画面を閉じる
+                talkingViewWidget.hideWidget();
+            }
+        }
+        if(!isRemoved) {
+            // 削除対象がない == ContactがPushされる前に消去された
+            // このあとPushが届く可能性があるので、Idを離脱済みとして記録しておく
+            console.log("save left client id: " + clientId);
+            leftClientIds.push(clientId);
         }
         // ウィジェット更新
         updateWidgets();
