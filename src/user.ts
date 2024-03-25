@@ -68,11 +68,11 @@ export class User {
                     state = UserState.Confirming;
                 }
             } else if(client.state == UserState.Invited) {
-                if(state == UserState.Standby) {
+                if(state == UserState.Standby || state == UserState.Confirming) {
                     state = UserState.Invited;
                 }
             } else if(client.state == UserState.Calling) {
-                if(state == UserState.Standby || state == UserState.Confirming) {
+                if(state == UserState.Standby || state == UserState.Invited || state == UserState.Confirming) {
                     state = UserState.Calling;
                 }
             } else if(client.state == UserState.Talking) {
