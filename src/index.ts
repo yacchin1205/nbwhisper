@@ -390,7 +390,8 @@ async function activate(app : JupyterFrontEnd) {
     // 待機チャンネルに接続
     let waitingClientId = await sfuClientManager.connectToWaitingChannel();
     if(waitingClientId == "") {
-        alert("通信に失敗しました");
+        // jupyterの設定が失敗した場合はここでアラート
+        alert("nbwhisperが起動できませんでした。設定を見直して再起動してください。");
         return;
     }
     console.log("connected to waiting channel, client id = " + waitingClientId);
