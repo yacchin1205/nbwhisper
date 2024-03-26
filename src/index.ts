@@ -311,16 +311,80 @@ async function activate(app : JupyterFrontEnd) {
         Sora
     );
 
-    // 自身のユーザー状態を更新する
-    const changeUserState = (newState : UserState) => {
-        if(ownClient.state == newState) return;
-        console.log("state: " + ownClient.state + " -> " + newState);
-        ownClient.state = newState;
+    // コンタクトを送信
+    const sendPushContact = async (client : Client, neesResponse : boolean) => {
+        let pushData : ContactPushData = {
+            kind : PushKind.Contact,
+            client : client,
+            needs_response : neesResponse
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
+    };
+
+    // クライアント更新を送信
+    const sendPushClient = async (client : Client) => {
         let pushData : ClientPushData = {
             kind : PushKind.Client,
-            client : ownClient
-        }
-        sfuClientManager.sendPushToWaitingChannel(pushData);
+            client : client
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
+    };
+
+    // 招待を送信
+    const sendPushInvite = async (target : string[], userName : string, roomName : string, talkingClientId : string, joiningUsers : string[]) => {
+        let pushData : InvitePushData = {
+            kind : PushKind.Invite,
+            target : target,
+            user_name : userName,
+            room_name : roomName,
+            talking_client_id : talkingClientId,
+            joining_users : joiningUsers
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
+    };
+
+    // 招待拒絶を送信
+    const sendPushRefuseInvite = async (target : string, userName : string, roomName : string) => {
+        let pushData : RefuseInvitePushData = {
+            kind : PushKind.RefuseInvite,
+            target : target,
+            user_name : userName,
+            room_name : roomName
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
+    };
+
+    // 招待キャンセルを送信
+    const sendPushCancelInvite = async (target : string, userName : string, roomName : string) => {
+        let pushData : CancelInvitePushData = {
+            kind : PushKind.CancelInvite,
+            target : target,
+            user_name : userName,
+            room_name : roomName
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
+    };
+
+    // 画面共有切り替えを送信
+    const sendPushShareDisplay = async (userName : string, roomName : string, isSharingDisplay : boolean) => {
+        let pushData : ShareDisplayPushData = {
+            kind : PushKind.ShareDisplay,
+            user_name : userName,
+            room_name : roomName,
+            is_sharing_display : isSharingDisplay
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
+    };
+    
+    // ミュート切り替えを送信
+    const sendPushMute = async  (userName : string, roomName : string, isMute : boolean) => {
+        let pushData : MutePushData = {
+            kind : PushKind.Mute,
+            user_name : userName,
+            room_name : roomName,
+            is_mute : isMute
+        };
+        await sfuClientManager.sendPushToWaitingChannel(pushData);
     };
 
     // 待機チャンネルに接続
@@ -379,12 +443,7 @@ async function activate(app : JupyterFrontEnd) {
             if(needsResponse) {
                 // 自身の情報を送り返す
                 console.log("response my client.")
-                let pushData : ContactPushData = {
-                    kind : PushKind.Contact,
-                    client : ownClient,
-                    needs_response : false
-                };
-                sfuClientManager.sendPushToWaitingChannel(pushData);
+                await sendPushContact(ownClient, false);
             }
         }
         else if(pushData.kind == PushKind.Client) {
@@ -440,6 +499,10 @@ async function activate(app : JupyterFrontEnd) {
             let invitePushData = data as InvitePushData;
             if(invitePushData.target.includes(ownUser.name)) {
                 // 自身が招待を受けた
+                if(invitation.is_active) {
+                    // もし招待済みだった場合はこれを拒絶する
+                    await sendPushRefuseInvite(invitation.from_user_name, ownUser.name, invitation.room_name);
+                }
                 // 招待情報を更新
                 invitation.is_active = true;
                 invitation.room_name = invitePushData.room_name;
@@ -448,7 +511,8 @@ async function activate(app : JupyterFrontEnd) {
                 invitation.target_user_names = invitePushData.target;
                 invitation.joined_user_names = invitePushData.joining_users;
                 // -> 着信中
-                changeUserState(UserState.Invited);
+                ownClient.state = UserState.Invited;
+                await sendPushClient(ownClient);
                 // ウィジェット更新
                 updateWidgets(); 
             }
@@ -478,7 +542,8 @@ async function activate(app : JupyterFrontEnd) {
                     // 全ユーザー対象、もしくは自身を対象とした招待のキャンセル
                     invitation.is_active = false;
                     // -> 待機中
-                    changeUserState(UserState.Standby);
+                    ownClient.state = UserState.Standby;
+                    await sendPushClient(ownClient);
                     // ウィジェット更新
                     updateWidgets(); 
                 }
@@ -531,7 +596,8 @@ async function activate(app : JupyterFrontEnd) {
             // 招待を無効化
             invitation.is_active = false;
             // -> 待機中
-            changeUserState(UserState.Standby);
+            ownClient.state = UserState.Standby;
+            await sendPushClient(ownClient);
             // ウィジェット更新
             updateWidgets();
             return;
@@ -562,31 +628,20 @@ async function activate(app : JupyterFrontEnd) {
             waitingUserListWidget.hide();
             // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
             invitation.is_active = false;
-            let pushData : CancelInvitePushData = {
-                kind : PushKind.CancelInvite,
-                target : ownUser.name,
-                user_name : invitation.from_user_name,
-                room_name : invitation.room_name
-            }
-            await sfuClientManager.sendPushToWaitingChannel(pushData);
+            await sendPushCancelInvite(ownUser.name, invitation.from_user_name, invitation.room_name);
             // -> 通話中
-            changeUserState(UserState.Talking);
+            ownClient.state = UserState.Talking;
+            await sendPushClient(ownClient);
             // ウィジェット更新
             updateWidgets(); 
         } else {
             // 通話リクエストを拒絶
-            let pushData : RefuseInvitePushData = {
-                kind : PushKind.RefuseInvite,
-                target : invitation.from_user_name,
-                user_name : ownUser.name,
-                room_name : invitation.room_name
-            };
-            // 拒絶を通知する
-            await sfuClientManager.sendPushToWaitingChannel(pushData);
+            await sendPushRefuseInvite(invitation.from_user_name, ownUser.name, invitation.room_name);
             // 招待を無効化
             invitation.is_active = false;
             // -> 待機中
-            changeUserState(UserState.Standby);
+            ownClient.state = UserState.Standby;
+            await sendPushClient(ownClient);
             // ウィジェット更新
             updateWidgets(); 
         }
@@ -650,7 +705,7 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 通話チャンネルにストリームが届いた場合
-    sfuClientManager.on(SfuClientEvent.TrackStreamOnTalking, (stream : MediaStream) => {
+    sfuClientManager.on(SfuClientEvent.TrackStreamOnTalking, async (stream : MediaStream) => {
         // ストリームidはクライアントIdと一致することを利用して、各ユーザーの参加状態を更新する
         // 各ユーザーのクライアントIdはPushで通知されるため、この段階ではまだ不明な場合もあるので
         // Push処理のほうでも参加状態更新を行う
@@ -666,7 +721,8 @@ async function activate(app : JupyterFrontEnd) {
         addRemoteStream(stream);
         if(ownClient.state == UserState.Calling) {
             // -> 通話中
-            changeUserState(UserState.Talking);
+            ownClient.state = UserState.Talking;
+            await sendPushClient(ownClient);
         }
         // ウィジェット更新
         updateWidgets();
@@ -707,14 +763,16 @@ async function activate(app : JupyterFrontEnd) {
     // 待機ユーザーリストで「通話をリクエスト」ボタンをクリックした
     waitingUserListWidget.onRequestTalking.connect(async (_, users) => {
         // -> 通話リクエスト確認中
-        changeUserState(UserState.Confirming);
+        ownClient.state = UserState.Confirming;
+        await sendPushClient(ownClient);
         if(await showRequestTalkingDialog(users)) {
             // 他タブで通話中は開始できない
             let ownState = ownUser.getState();
             if(ownState == UserState.Calling || ownState == UserState.Talking) {
                 alert("他のタブやウィンドウで通話中のため、新たに通話を開始することができません");
                 // -> 待機中
-                changeUserState(UserState.Standby);
+                ownClient.state = UserState.Standby;
+                await sendPushClient(ownClient);
                 return
             }
             // 現在の状態が招待可能なユーザーのみ対象とする
@@ -722,7 +780,8 @@ async function activate(app : JupyterFrontEnd) {
             if(users.length == 0) {
                 alert("送信先が通話中のため、通話リクエストを送信できません");
                 // -> 待機中
-                changeUserState(UserState.Standby);
+                ownClient.state = UserState.Standby;
+                await sendPushClient(ownClient);
                 return;
             }
             // オーディオストリーム取得
@@ -730,7 +789,8 @@ async function activate(app : JupyterFrontEnd) {
             if(!stream) {
                 alert("マイクを使用することができないため、通話を開始することができませんでした");
                 // -> 待機中
-                changeUserState(UserState.Standby);
+                ownClient.state = UserState.Standby;
+                await sendPushClient(ownClient);
                 return;
             }
             localStream = stream;
@@ -742,7 +802,8 @@ async function activate(app : JupyterFrontEnd) {
                 alert("通話の開始に失敗しました");
                 stopMediaStream(localStream);
                 // -> 待機中
-                changeUserState(UserState.Standby);
+                ownClient.state = UserState.Standby;
+                await sendPushClient(ownClient);
                 return;
             }
             console.log("connected to talking channel, client id = " + talkingClientId);
@@ -759,22 +820,16 @@ async function activate(app : JupyterFrontEnd) {
             talkingViewWidget.showWidget();
             // 招待を送る
             let userNames = Enumerable.from(users).select(u => u.name).toArray();
-            let pushData : InvitePushData = {
-                kind : PushKind.Invite,
-                target : userNames,
-                user_name : ownUser.name,
-                room_name : roomName,
-                talking_client_id : talkingClientId,
-                joining_users : []
-            }
-            sfuClientManager.sendPushToWaitingChannel(pushData);
+            await sendPushInvite(userNames, ownUser.name, roomName, talkingClientId, []);
             // 待機ユーザーリスト非表示
             waitingUserListWidget.hide();
             // -> 呼び出し中
-            changeUserState(UserState.Calling);
+            ownClient.state = UserState.Calling;
+            await sendPushClient(ownClient);
         } else {
             // -> 待機中
-            changeUserState(UserState.Standby);
+            ownClient.state = UserState.Standby;
+            await sendPushClient(ownClient);
         }
     });
 
@@ -801,15 +856,7 @@ async function activate(app : JupyterFrontEnd) {
             updateWidgets();
             // 招待を送る
             let userNames = Enumerable.from(users).select(u => u.name).toArray();
-            let pushData : InvitePushData = {
-                kind : PushKind.Invite,
-                target : userNames,
-                user_name : ownUser.name,
-                room_name : ownClient.talking_room_name,
-                talking_client_id : ownClient.talking_client_id,
-                joining_users : joiningUsers
-            }
-            await sfuClientManager.sendPushToWaitingChannel(pushData);
+            await sendPushInvite(userNames, ownUser.name, ownClient.talking_room_name, ownClient.talking_client_id, joiningUsers);
         }
     });
 
@@ -818,13 +865,7 @@ async function activate(app : JupyterFrontEnd) {
         // 招待中フラグを取り消す
         user.is_invited = false;
         // 招待キャンセルを送る
-        let pushData : CancelInvitePushData = {
-            kind : PushKind.CancelInvite,
-            target : user.name,
-            user_name : ownUser.name,
-            room_name : ownClient.talking_room_name
-        };
-        await sfuClientManager.sendPushToWaitingChannel(pushData);
+        await sendPushCancelInvite(user.name, ownUser.name, ownClient.talking_room_name);
     });
 
     // 画面共有を開始する
@@ -842,14 +883,8 @@ async function activate(app : JupyterFrontEnd) {
         ownUser.is_sharing_display = true;
         // ウィジェット更新
         updateWidgets();
-        // 自身の情報を送信
-        let pushData : ShareDisplayPushData = {
-            kind : PushKind.ShareDisplay,
-            user_name : ownUser.name,
-            room_name : ownClient.talking_room_name,
-            is_sharing_display : true
-        };
-        sfuClientManager.sendPushToWaitingChannel(pushData);
+        // 画面共有を送信
+        await sendPushShareDisplay(ownUser.name, ownClient.talking_room_name, true);
         return true;
     };
 
@@ -867,14 +902,8 @@ async function activate(app : JupyterFrontEnd) {
         ownUser.is_sharing_display = false;
         // ウィジェット更新
         updateWidgets();
-        // 自身の情報を送信
-        let pushData : ShareDisplayPushData = {
-            kind : PushKind.ShareDisplay,
-            user_name : ownUser.name,
-            room_name : ownClient.talking_room_name,
-            is_sharing_display : false
-        };
-        sfuClientManager.sendPushToWaitingChannel(pushData);
+        // 画面共有取り消しを送信
+        await sendPushShareDisplay(ownUser.name, ownClient.talking_room_name, false);
         return true;
     };
 
@@ -913,13 +942,7 @@ async function activate(app : JupyterFrontEnd) {
         // ウィジェット更新
         updateWidgets();
         // 送信
-        let pushData : MutePushData = {
-            kind : PushKind.Mute,
-            user_name : ownUser.name,
-            room_name : ownClient.talking_room_name,
-            is_mute : isOn
-        };
-        await sfuClientManager.sendPushToWaitingChannel(pushData);
+        await sendPushMute(ownUser.name, ownClient.talking_room_name, isOn);
     };
 
     // 通話画面でミュート切り替え
@@ -942,13 +965,7 @@ async function activate(app : JupyterFrontEnd) {
         await sfuClientManager.disconnectFromTalkingChannel();
         if(Enumerable.from(allUsers).where(u => u.is_invited).any()) {
             // 招待しているユーザーがいる場合はキャンセルを送信する
-            let pushData : CancelInvitePushData = {
-                kind : PushKind.CancelInvite,
-                target : "",
-                user_name : ownUser.name,
-                room_name : ownClient.talking_room_name
-            };
-            await sfuClientManager.sendPushToWaitingChannel(pushData);
+            await sendPushCancelInvite("", ownUser.name, ownClient.talking_room_name);
         }
         allUsers.forEach(u => {
             // 招待中、参加中フラグを落とす
@@ -974,7 +991,8 @@ async function activate(app : JupyterFrontEnd) {
         // 待機ユーザーリスト表示
         waitingUserListWidget.show();
         // -> 待機中
-        changeUserState(UserState.Standby);
+        ownClient.state = UserState.Standby;
+        await sendPushClient(ownClient);
     }
 
     // 通話画面で切断ボタンを押したときの処理
@@ -1023,12 +1041,7 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 自身のユーザー情報を初回プッシュ
-    let firstPushData : ContactPushData = {
-        kind : PushKind.Contact,
-        client : ownClient,
-        needs_response : true
-    };
-    sfuClientManager.sendPushToWaitingChannel(firstPushData);
+    await sendPushContact(ownClient, true);
 }
 
 /**
