@@ -755,6 +755,7 @@ async function activate(app : JupyterFrontEnd) {
             await hungUp();
             talkingViewWidget.hideWidget();
             miniTalkingViewWidget.hide();
+            miniTalkingViewWidget.update();
             alert("通話が終了されました")
         }
         // ウィジェット更新
@@ -919,6 +920,7 @@ async function activate(app : JupyterFrontEnd) {
                 // 失敗した場合は通話画面を戻す
                 talkingViewWidget.showWidget();
                 miniTalkingViewWidget.hide();
+                miniTalkingViewWidget.update();
             }
             // 画面更新
             talkingViewWidget.update();
@@ -1009,6 +1011,7 @@ async function activate(app : JupyterFrontEnd) {
         await hungUp();
         // ミニ通話画面を閉じる
         miniTalkingViewWidget.hide();
+        miniTalkingViewWidget.update();
     });
 
     // 通話画面で最小化ボタンを押したときの処理
@@ -1041,6 +1044,7 @@ async function activate(app : JupyterFrontEnd) {
         }
         talkingViewWidget.showWidget();
         miniTalkingViewWidget.hide();
+        miniTalkingViewWidget.update();
     });
 
     // 自身のユーザー情報を初回プッシュ
