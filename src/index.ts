@@ -913,6 +913,7 @@ async function activate(app : JupyterFrontEnd) {
         if(isOn) {
             // ミニ通話画面を表示、通話画面を最小化
             miniTalkingViewWidget.show();
+            miniTalkingViewWidget.update();
             talkingViewWidget.hideWidget();
             if(!await startSharingDisplay()) {
                 // 失敗した場合は通話画面を戻す
@@ -1013,6 +1014,7 @@ async function activate(app : JupyterFrontEnd) {
     // 通話画面で最小化ボタンを押したときの処理
     talkingViewWidget.onMinimizeTalkingView.connect(() => {
         miniTalkingViewWidget.show();
+        miniTalkingViewWidget.update();
         talkingViewWidget.hideWidget();
     });
 
