@@ -533,7 +533,7 @@ async function activate(app : JupyterFrontEnd) {
                     talkingViewWidget.hideWidget();
                 }
                 // ウィジェット更新
-                updateWidgets(); 
+                updateWidgets();
             }
         } else if(pushData.kind == PushKind.CancelInvite) {
             // 招待のキャンセル
@@ -655,8 +655,9 @@ async function activate(app : JupyterFrontEnd) {
         } else {
             // 通話リクエストを拒絶
             await sendPushRefuseInvite(invitation.from_user_name, ownUser.name, invitation.room_name);
-            // 招待を無効化
+            // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
             invitation.is_active = false;
+            await sendPushCancelInvite(ownUser.name, invitation.from_user_name, invitation.room_name);
             // -> 待機中
             ownClient.state = UserState.Standby;
             await sendPushClient(ownClient);
