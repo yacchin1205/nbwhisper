@@ -445,6 +445,11 @@ async function activate(app : JupyterFrontEnd) {
                 // 自身の情報を送り返す
                 console.log("response my client.")
                 await sendPushContact(ownClient, false);
+                if(ownClient.state == UserState.Calling || ownClient.state == UserState.Talking) {
+                    // ミュート、画面共有情報も新規追加したユーザーに送る必要がある
+                    await sendPushMute(ownUser.name, ownClient.talking_room_name, ownUser.is_mute);
+                    await sendPushShareDisplay(ownUser.name, ownClient.talking_room_name, ownUser.is_sharing_display);
+                }
             }
         }
         else if(pushData.kind == PushKind.Client) {
