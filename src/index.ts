@@ -553,28 +553,32 @@ async function activate(app : JupyterFrontEnd) {
             // 画面の共有切り替え
             let shareDisplayPushData = data as ShareDisplayPushData;
             let user = Enumerable.from(allUsers).where(u => u.name == shareDisplayPushData.user_name).firstOrDefault();
-            if(user && shareDisplayPushData.room_name == ownClient.talking_room_name) {
+            if(user) {
                 // 更新
                 user.is_sharing_display = shareDisplayPushData.is_sharing_display;
-                if(
-                    shareDisplayPushData.is_sharing_display && 
-                    ownUser.is_sharing_display
-                ) {
-                    // 同室かつ自分も相手も共有状態になった場合は、自分の共有を解除する
-                    await finishSharingDisplay();
+                if(shareDisplayPushData.room_name == ownClient.talking_room_name) {
+                    if(
+                        shareDisplayPushData.is_sharing_display && 
+                        ownUser.is_sharing_display
+                    ) {
+                        // 同室かつ自分も相手も共有状態になった場合は、自分の共有を解除する
+                        await finishSharingDisplay();
+                    }
+                    // ウィジェット更新
+                    updateWidgets(); 
                 }
-                // ウィジェット更新
-                updateWidgets(); 
             }
         } else if(pushData.kind == PushKind.Mute) {
             // ミュート切り替え
             let muteDisplayPushData = data as MutePushData;
             let user = Enumerable.from(allUsers).where(u => u.name == muteDisplayPushData.user_name).firstOrDefault();
-            if(user && muteDisplayPushData.room_name == ownClient.talking_room_name) {
+            if(user) {
                 // 更新
                 user.is_mute = muteDisplayPushData.is_mute;
-                // ウィジェット更新
-                updateWidgets(); 
+                if(muteDisplayPushData.room_name == ownClient.talking_room_name) {
+                    // ウィジェット更新
+                    updateWidgets();
+                }
             }
         }
     });
