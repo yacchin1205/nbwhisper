@@ -76,7 +76,7 @@ export class WaitingUserListWidget extends ReactWidget {
     }
 
     _requestTalking() {
-        let users = Enumerable.from(this._users).where(u => u.is_selected).toArray();
+        let users = Enumerable.from(this._users).where(u => u.canInvite() && u.is_selected).toArray();
         if(users.length > 0) {
             this.onRequestTalking.emit(users);
         }
@@ -116,7 +116,7 @@ export class WaitingUserListWidget extends ReactWidget {
                                         optionalClassName='nbwhisper-waiting-user-list-container'
                                     />
                                     <RequestTalkingButton
-                                        targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
+                                        targetNumber={Enumerable.from(this._users).where(u => u.canInvite() && u.is_selected).count()}
                                         onClick={() => this._requestTalking()}
                                     />
                                 </div>

@@ -184,7 +184,7 @@ export class TalkingViewWidget extends ReactWidget {
     }
 
     private _requestJoining() {
-        let users = Enumerable.from(this._users).where(u => u.is_selected).toArray();
+        let users = Enumerable.from(this._users).where(u => u.canInvite() && u.is_selected).toArray();
         if(users.length > 0) {
             this.onResuestJoining.emit(users);
         }
@@ -283,7 +283,7 @@ export class TalkingViewWidget extends ReactWidget {
                                         optionalClassName='nbwhisper-talking-view-user-list-container'
                                     />
                                     <RequestJoiningButton
-                                        targetNumber={Enumerable.from(this._users).where(u => u.is_selected).count()}
+                                        targetNumber={Enumerable.from(this._users).where(u => u.canInvite() && u.is_selected).count()}
                                         onClick={() => this._requestJoining()}
                                     />
                                 </React.Fragment>

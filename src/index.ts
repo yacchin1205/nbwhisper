@@ -580,6 +580,7 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 通話リクエスト通知ウィジェットで決定した場合
+    
     requestTalkingWidget.onDesideRequest.connect(async (_, isOk) => {
         if(!invitation.is_active) {
             // 招待自体がない
@@ -605,6 +606,8 @@ async function activate(app : JupyterFrontEnd) {
         }
 
         if(isOk) {
+            // 自身通話中は処理しない
+            if(ownClient.state == UserState.Talking) return;
             // 他タブで通話中は開始できない
             let ownState = ownUser.getState();
             if(ownState == UserState.Calling || ownState == UserState.Talking) {
