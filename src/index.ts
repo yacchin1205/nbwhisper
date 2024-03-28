@@ -654,6 +654,7 @@ async function activate(app : JupyterFrontEnd) {
             ownClient.talking_room_name = invitation.room_name;
             await sendPushClient(ownClient);
             // 待機ユーザーリスト非表示
+            waitingUserListWidget.setListVisible(false);
             waitingUserListWidget.hide();
             // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
             invitation.is_active = false;
@@ -850,6 +851,7 @@ async function activate(app : JupyterFrontEnd) {
             let userNames = Enumerable.from(users).select(u => u.name).toArray();
             await sendPushInvite(userNames, ownUser.name, roomName, talkingClientId, []);
             // 待機ユーザーリスト非表示
+            waitingUserListWidget.setListVisible(false);
             waitingUserListWidget.hide();
             // -> 呼び出し中
             ownClient.state = UserState.Calling;

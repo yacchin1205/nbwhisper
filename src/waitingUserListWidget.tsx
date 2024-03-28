@@ -71,7 +71,6 @@ export class WaitingUserListWidget extends ReactWidget {
 
     setListVisible(value : boolean) {
         this._isListVisible = value;
-        console.log(this._users);
         this.update();
     }
 
