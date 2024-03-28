@@ -584,7 +584,6 @@ async function activate(app : JupyterFrontEnd) {
     });
 
     // 通話リクエスト通知ウィジェットで決定した場合
-    
     requestTalkingWidget.onDesideRequest.connect(async (_, isOk) => {
         if(!invitation.is_active) {
             // 招待自体がない
@@ -997,11 +996,6 @@ async function activate(app : JupyterFrontEnd) {
             // 招待中、参加中フラグを落とす
             u.is_invited = false;
             u.is_joined = false;
-            // ミュート、共有状態をリセット
-            u.is_mute = false;
-            u.is_sharing_display = false;
-            // ユーザーのクライアントのチャンネルIdを削除
-            u.clients.forEach(client => client.talking_client_id = "");
         });
         // 自身の通話クライアントIdを削除
         ownClient.talking_client_id = "";
