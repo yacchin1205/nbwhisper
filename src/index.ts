@@ -605,10 +605,22 @@ async function activate(app : JupyterFrontEnd) {
         }
 
         if(isOk) {
+            // 他タブで通話中は開始できない
+            let ownState = ownUser.getState();
+            if(ownState == UserState.Calling || ownState == UserState.Talking) {
+                alert("他のタブやウィンドウで通話中のため、新たに通話を開始することができません");
+                return
+            }
+            // -> 通話中
+            ownClient.state = UserState.Talking;
+            await sendPushClient(ownClient);
             // オーディオストリーム取得
             localStream = await getAudioStream(dummyCanvasWidget);
             if(!localStream) {
                 alert("マイクを使用することができないため、通話を開始することができませんでした");
+                // -> 着信中 or 待機中
+                ownClient.state = invitation.is_active ? UserState.Invited : UserState.Standby;
+                await sendPushClient(ownClient);
                 return;
             }
             console.log("local stream id = " + localStream.id);
@@ -618,8 +630,12 @@ async function activate(app : JupyterFrontEnd) {
             let talkingClientId = await sfuClientManager.connectToTalkingChannel(invitation.room_name, localStream);
             if(talkingClientId == "") {
                 alert("通話の開始に失敗しました");
+                stopMediaStream(localStream);
                 // 通話ビュー非表示
                 talkingViewWidget.hideWidget();
+                // -> 着信中 or 待機中
+                ownClient.state = invitation.is_active ? UserState.Invited : UserState.Standby;
+                await sendPushClient(ownClient);
                 return;
             }
             console.log("connected to talking channel, client id = " + talkingClientId);
@@ -630,9 +646,6 @@ async function activate(app : JupyterFrontEnd) {
             // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
             invitation.is_active = false;
             await sendPushCancelInvite(ownUser.name, invitation.from_user_name, invitation.room_name);
-            // -> 通話中
-            ownClient.state = UserState.Talking;
-            await sendPushClient(ownClient);
             // ウィジェット更新
             updateWidgets(); 
         } else {
