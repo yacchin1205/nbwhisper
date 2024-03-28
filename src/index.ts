@@ -644,6 +644,7 @@ async function activate(app : JupyterFrontEnd) {
             console.log("connected to talking channel, client id = " + talkingClientId);
             ownClient.talking_client_id = talkingClientId;
             ownClient.talking_room_name = invitation.room_name;
+            await sendPushClient(ownClient);
             // 待機ユーザーリスト非表示
             waitingUserListWidget.hide();
             // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
