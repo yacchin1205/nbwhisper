@@ -10,37 +10,37 @@ import { ServerConnection } from '@jupyterlab/services';
  * @returns The response body interpreted as JSON
  */
 export async function requestAPI<T>(
-    endPoint = '',
-    init: RequestInit = {}
+  endPoint = '',
+  init: RequestInit = {}
 ): Promise<T> {
-    // Make request to Jupyter API
-    const settings = ServerConnection.makeSettings();
-    const requestUrl = URLExt.join(
-        settings.baseUrl,
-        'nbwhisper', // API Namespace
-        endPoint
-    );
+  // Make request to Jupyter API
+  const settings = ServerConnection.makeSettings();
+  const requestUrl = URLExt.join(
+    settings.baseUrl,
+    'nbwhisper', // API Namespace
+    endPoint
+  );
 
-    let response: Response;
+  let response: Response;
+  try {
+    response = await ServerConnection.makeRequest(requestUrl, init, settings);
+  } catch (error) {
+    throw new ServerConnection.NetworkError(error as any);
+  }
+
+  let data: any = await response.text();
+
+  if (data.length > 0) {
     try {
-        response = await ServerConnection.makeRequest(requestUrl, init, settings);
+      data = JSON.parse(data);
     } catch (error) {
-        throw new ServerConnection.NetworkError(error as any);
+      console.log('Not a JSON response body.', response);
     }
+  }
 
-    let data: any = await response.text();
+  if (!response.ok) {
+    throw new ServerConnection.ResponseError(response, data.message || data);
+  }
 
-    if (data.length > 0) {
-        try {
-            data = JSON.parse(data);
-        } catch (error) {
-            console.log('Not a JSON response body.', response);
-        }
-    }
-
-    if (!response.ok) {
-        throw new ServerConnection.ResponseError(response, data.message || data);
-    }
-
-    return data;
+  return data;
 }
