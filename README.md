@@ -1,8 +1,11 @@
 ## NBWhisper
-This nbextension allows using WebRTC in your blowser. You can talk with your voice and share your blowser tab you are editting by WebRTC. WebRTC services are offered by SkyWay.
+This NB extension allows you to use WebRTC in your browser. You can talk and share your tab's view with colleagues on the same JupyterHub/OperationHub. 
 
-### SkyWay Website
-https://skyway.ntt.com/ja/
+> [!NOTE]
+> We will leave SkyWay soon and adopt "WebMeeting Software Suite" (https://meeting.dev/index.html).
+>
+
+Currently, this implementation depends on SkyWay (https://skyway.ntt.com/ja/)
 
 ### options
 
