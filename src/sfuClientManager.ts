@@ -23,7 +23,6 @@ export class SfuClientManager {
   private sora;
   private channelIdPrefix: string;
   private channelIdSuffix: string;
-  private apiKey: string;
 
   private waitingChannel: PushChannelClient | null = null;
   private talkingChannel: TalkChannelClient | null = null;
@@ -33,14 +32,12 @@ export class SfuClientManager {
   constructor(
     signalingUrl: string,
     channelIdPrefix: string,
-    channelIdSuffix: string,
-    apiKey: string
+    channelIdSuffix: string
   ) {
     const signalingUrls = signalingUrl !== null ? signalingUrl.split(',') : [];
     this.sora = Sora.connection(signalingUrls, this.debug);
     this.channelIdPrefix = channelIdPrefix;
     this.channelIdSuffix = channelIdSuffix;
-    this.apiKey = apiKey;
   }
 
   // イベントの登録
@@ -60,22 +57,20 @@ export class SfuClientManager {
     const channelId = `${this.channelIdPrefix}waiting${this.channelIdSuffix}`;
     // アクセストークンを得る
     const response = await requestAPI<any>(
-      `create-access-token?api_key=${this.apiKey}&channel_id=${channelId}`
+      `create-access-token?channel_id=${channelId}`
     );
     if (response.status === 200) {
       const responseObj = JSON.parse(response.text);
       const accessToken = responseObj.access_token;
       this.waitingChannel = new PushChannelClient(
         this.sora,
-        { access_token: accessToken },
         channelId,
-        this.apiKey,
         data => this.onPushedWaitingChannel(data),
         clientId => this.onClientJoinWaitingChannel(clientId),
         clientId => this.onClientLeftWaitingChannel(clientId)
       );
       // 接続する
-      return (await this.waitingChannel.connect()) ?? '';
+      return (await this.waitingChannel.connect(accessToken)) ?? '';
     } else {
       return '';
     }
@@ -106,21 +101,20 @@ export class SfuClientManager {
     const channelId = `${this.channelIdPrefix}${roomName}${this.channelIdSuffix}`;
     // アクセストークンを得る
     const response = await requestAPI<any>(
-      `create-access-token?api_key=${this.apiKey}&channel_id=${channelId}`
+      `create-access-token?channel_id=${channelId}`
     );
     if (response.status === 200) {
       const responseObj = JSON.parse(response.text);
       const accessToken = responseObj.access_token;
       this.talkingChannel = new TalkChannelClient(
         this.sora,
-        { access_token: accessToken },
         channelId,
         stream => this.onTrackStreamTalkingChannel(stream),
         stream => this.onRemoveStreamTalkingChannel(stream),
         clientId => this.onClientLeftTalkingChannel(clientId)
       );
       // 接続する
-      return (await this.talkingChannel.connect(localStream)) ?? '';
+      return (await this.talkingChannel.connect(localStream, accessToken)) ?? '';
     } else {
       return '';
     }
@@ -157,27 +151,21 @@ export class SfuClientManager {
 class PushChannelClient {
   private sora;
   private connection!: any;
-  private metadata: object;
   private channelId: string;
-  private apiKey: string;
   private onPushed!: (data: object) => void;
   private onClientJoined: (clientId: string) => void;
   private onClientLeft!: (cliendId: string) => void;
 
   constructor(
     sora: any,
-    metadata: object,
     channelId: string,
-    apiKey: string,
     onPushed: (data: object) => void,
     onClientJoined: (clientId: string) => void,
     onClientLeft: (cliendId: string) => void
   ) {
     this.sora = sora;
-    this.metadata = metadata;
     this.channelId = channelId;
-    this.connection = this.sora.recvonly(this.channelId, this.metadata);
-    this.apiKey = apiKey;
+    this.connection = this.sora.recvonly(this.channelId);
     this.onPushed = onPushed;
     this.onClientJoined = onClientJoined;
     this.onClientLeft = onClientLeft;
@@ -186,7 +174,10 @@ class PushChannelClient {
     this.connection.on('push', this.onPush.bind(this));
   }
 
-  async connect() {
+  async connect(accessToken: string) {
+    this.connection.metadata = {
+      access_token: accessToken
+    };
     await this.connection.connect();
     return this.connection.clientId;
   }
@@ -198,7 +189,7 @@ class PushChannelClient {
   async sendPush(data: object) {
     const text = JSON.stringify(data);
     const response = await requestAPI<any>(
-      `push-channel?api_key=${this.apiKey}&channel_id=${this.channelId}&data=${text}`
+      `push-channel?channel_id=${this.channelId}&data=${text}`
     );
     return response.status === 200;
   }
@@ -228,7 +219,6 @@ class PushChannelClient {
 class TalkChannelClient {
   private sora;
   private connection!: any;
-  private metadata: object;
   private channelId: string;
   private onStreamTracked!: (stream: MediaStream) => void;
   private onStreamRemoved!: (stream: MediaStream) => void;
@@ -236,16 +226,14 @@ class TalkChannelClient {
 
   constructor(
     sora: any,
-    metadata: object,
     channelId: string,
     onStreamTracked: (stream: MediaStream) => void,
     onStreamRemoved: (stream: MediaStream) => void,
     onClientLeft: (cliendId: string) => void
   ) {
     this.sora = sora;
-    this.metadata = metadata;
     this.channelId = channelId;
-    this.connection = this.sora.sendrecv(this.channelId, this.metadata);
+    this.connection = this.sora.sendrecv(this.channelId);
     this.onStreamTracked = onStreamTracked;
     this.onStreamRemoved = onStreamRemoved;
     this.onClientLeft = onClientLeft;
@@ -255,7 +243,10 @@ class TalkChannelClient {
     this.connection.on('removetrack', this.onRemovetrack.bind(this));
   }
 
-  async connect(stream: MediaStream) {
+  async connect(stream: MediaStream, accessToken: string) {
+    this.connection.metadata = {
+      access_token: accessToken
+    };
     await this.connection.connect(stream);
     return this.connection.clientId;
   }

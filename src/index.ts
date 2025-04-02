@@ -152,7 +152,6 @@ async function initialize(platform: Platform) {
   // jupyter_notebook_config.pyから設定の読み込み
   const data = await requestAPI<any>('config');
   const username = data.username ?? '';
-  const apiKey = data.api_key ?? '';
   const signalingUrls = data.signaling_url ?? '';
   const channelIdPrefix = data.channel_id_prefix ?? '';
   const channelIdSuffix = data.channel_id_suffix ?? ''; // Sora cloudでは "@プロジェクト名"
@@ -308,7 +307,6 @@ async function initialize(platform: Platform) {
     signalingUrls,
     channelIdPrefix,
     channelIdSuffix,
-    apiKey
   );
 
   // コンタクトを送信
