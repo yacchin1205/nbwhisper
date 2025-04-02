@@ -306,7 +306,7 @@ async function initialize(platform: Platform) {
   const sfuClientManager = new SfuClientManager(
     signalingUrls,
     channelIdPrefix,
-    channelIdSuffix,
+    channelIdSuffix
   );
 
   // コンタクトを送信

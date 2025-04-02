@@ -114,7 +114,9 @@ export class SfuClientManager {
         clientId => this.onClientLeftTalkingChannel(clientId)
       );
       // 接続する
-      return (await this.talkingChannel.connect(localStream, accessToken)) ?? '';
+      return (
+        (await this.talkingChannel.connect(localStream, accessToken)) ?? ''
+      );
     } else {
       return '';
     }
