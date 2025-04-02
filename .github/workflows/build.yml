@@ -63,7 +63,7 @@ jobs:
         pip uninstall -y myextension jupyterlab
         rm -rf myextension
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: myextension-sdist
         path: myextension.tar.gz
