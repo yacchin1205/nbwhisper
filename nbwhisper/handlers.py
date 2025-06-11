@@ -17,21 +17,10 @@ class ConfigHandler(APIHandler):
             username = os.environ['JUPYTERHUB_USER']
         self.finish(json.dumps({
             "username": username,
-            "api_key": self._config.api_key,
             "signaling_url": self._config.signaling_url,
             "channel_id_prefix": self._config.channel_id_prefix,
             "channel_id_suffix": self._config.channel_id_suffix,
             "share_current_tab_only": self._config.share_current_tab_only
-        }))
-
-class RouteHandler(APIHandler):
-    # The following decorator should be present on all verb methods (head, get, post,
-    # patch, put, delete, options) to ensure only authorized user can request the
-    # Jupyter server
-    @tornado.web.authenticated
-    def get(self):
-        self.finish(json.dumps({
-            "data": "This is /nbwhisper/get-example endpoint!"
         }))
 
 def get_api_handlers(parent_app, base_dir):
@@ -40,10 +29,9 @@ def get_api_handlers(parent_app, base_dir):
     handler_settings['config'] = config
 
     return [
-        ("get-example", RouteHandler, {}),
         ("config", ConfigHandler, handler_settings),
-        ("create-access-token", CreateAccessTokenHandler, {}),
-        ("push-channel", PushChannelHandler, {})
+        ("create-access-token", CreateAccessTokenHandler, handler_settings),
+        ("push-channel", PushChannelHandler, handler_settings)
     ]
 
 def setup_handlers(server_app, web_app):

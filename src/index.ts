@@ -152,7 +152,6 @@ async function initialize(platform: Platform) {
   // jupyter_notebook_config.pyから設定の読み込み
   const data = await requestAPI<any>('config');
   const username = data.username ?? '';
-  const apiKey = data.api_key ?? '';
   const signalingUrls = data.signaling_url ?? '';
   const channelIdPrefix = data.channel_id_prefix ?? '';
   const channelIdSuffix = data.channel_id_suffix ?? ''; // Sora cloudでは "@プロジェクト名"
@@ -307,8 +306,7 @@ async function initialize(platform: Platform) {
   const sfuClientManager = new SfuClientManager(
     signalingUrls,
     channelIdPrefix,
-    channelIdSuffix,
-    apiKey
+    channelIdSuffix
   );
 
   // コンタクトを送信
@@ -1283,6 +1281,9 @@ async function initialize(platform: Platform) {
       // 招待中、参加中フラグを落とす
       u.is_invited = false;
       u.is_joined = false;
+      // ミュート、画面共有をリセット
+      u.is_mute = false;
+      u.is_sharing_display = false;
     });
     // 自身の通話クライアントIdを削除
     ownClient.talking_client_id = '';
