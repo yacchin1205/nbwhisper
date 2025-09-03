@@ -2,7 +2,7 @@ import json
 
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import url_path_join
-from .soraHandlers import CreateAccessTokenHandler, PushChannelHandler
+from .soraHandlers import CreateAccessTokenHandler, PushChannelHandler, ChangeSpotlightRidHandler
 from .config import NBWhisper
 import tornado, os
 
@@ -31,7 +31,8 @@ def get_api_handlers(parent_app, base_dir):
     return [
         ("config", ConfigHandler, handler_settings),
         ("create-access-token", CreateAccessTokenHandler, handler_settings),
-        ("push-channel", PushChannelHandler, handler_settings)
+        ("push-channel", PushChannelHandler, handler_settings),
+        ("change-spotlight-rid", ChangeSpotlightRidHandler, handler_settings)
     ]
 
 def setup_handlers(server_app, web_app):

@@ -23,6 +23,7 @@ export class SfuClientManager {
   private sora;
   private channelIdPrefix: string;
   private channelIdSuffix: string;
+  private userDisplayName: string;
 
   private waitingChannel: PushChannelClient | null = null;
   private talkingChannel: TalkChannelClient | null = null;
@@ -32,12 +33,14 @@ export class SfuClientManager {
   constructor(
     signalingUrl: string,
     channelIdPrefix: string,
-    channelIdSuffix: string
+    channelIdSuffix: string,
+    userDisplayName: string
   ) {
     const signalingUrls = signalingUrl !== null ? signalingUrl.split(',') : [];
     this.sora = Sora.connection(signalingUrls, this.debug);
     this.channelIdPrefix = channelIdPrefix;
     this.channelIdSuffix = channelIdSuffix;
+    this.userDisplayName = userDisplayName;
   }
 
   // イベントの登録
@@ -56,12 +59,12 @@ export class SfuClientManager {
     // チャンネル名生成
     const channelId = `${this.channelIdPrefix}waiting${this.channelIdSuffix}`;
     // アクセストークンを得る
-    const response = await requestAPI<any>(
-      `create-access-token?channel_id=${channelId}`
-    );
-    if (response.status === 200) {
+    try {
+      const response = await requestAPI<any>(
+        `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
+      );
       const responseObj = JSON.parse(response.text);
-      const accessToken = responseObj.access_token;
+      const { metadata, signaling_notify_metadata } = responseObj;
       this.waitingChannel = new PushChannelClient(
         this.sora,
         channelId,
@@ -70,8 +73,14 @@ export class SfuClientManager {
         clientId => this.onClientLeftWaitingChannel(clientId)
       );
       // 接続する
-      return (await this.waitingChannel.connect(accessToken)) ?? '';
-    } else {
+      return (
+        (await this.waitingChannel.connect(
+          metadata,
+          signaling_notify_metadata
+        )) ?? ''
+      );
+    } catch (e) {
+      console.error('create access token error.', e);
       return '';
     }
   }
@@ -100,12 +109,12 @@ export class SfuClientManager {
     // チャンネル名生成
     const channelId = `${this.channelIdPrefix}${roomName}${this.channelIdSuffix}`;
     // アクセストークンを得る
-    const response = await requestAPI<any>(
-      `create-access-token?channel_id=${channelId}`
-    );
-    if (response.status === 200) {
+    try {
+      const response = await requestAPI<any>(
+        `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
+      );
       const responseObj = JSON.parse(response.text);
-      const accessToken = responseObj.access_token;
+      const { metadata, signaling_notify_metadata } = responseObj;
       this.talkingChannel = new TalkChannelClient(
         this.sora,
         channelId,
@@ -115,9 +124,14 @@ export class SfuClientManager {
       );
       // 接続する
       return (
-        (await this.talkingChannel.connect(localStream, accessToken)) ?? ''
+        (await this.talkingChannel.connect(
+          localStream,
+          metadata,
+          signaling_notify_metadata
+        )) ?? ''
       );
-    } else {
+    } catch (e) {
+      console.error('create access token error. ', e);
       return '';
     }
   }
@@ -134,6 +148,19 @@ export class SfuClientManager {
       return;
     }
     await this.talkingChannel.disconnect();
+  }
+
+  // 通話チャンネルを通してクライアントの focus_rid, unfocus_rid を変更する
+  async changeTakingChannelSpotlightRids(
+    myClientId: string,
+    otherClientIds: string[]
+  ) {
+    return (
+      (await this.talkingChannel?.changeSpotlightRids(
+        myClientId,
+        otherClientIds
+      )) ?? false
+    );
   }
 
   onTrackStreamTalkingChannel(stream: MediaStream) {
@@ -176,10 +203,20 @@ class PushChannelClient {
     this.connection.on('push', this.onPush.bind(this));
   }
 
-  async connect(accessToken: string) {
-    this.connection.metadata = {
-      access_token: accessToken
-    };
+  async connect(metadata: any, signalingNotifyMetadata: any) {
+    if (metadata) {
+      this.connection.metadata = Object.assign({}, metadata);
+      if (metadata.channel_id) {
+        // Fix channelId for meeting.dev
+        this.connection.channelId = metadata.channel_id;
+        this.channelId = metadata.channel_id;
+      }
+    }
+    if (signalingNotifyMetadata) {
+      this.connection.options = Object.assign(this.connection.options, {
+        signalingNotifyMetadata: signalingNotifyMetadata
+      });
+    }
     await this.connection.connect();
     return this.connection.clientId;
   }
@@ -190,14 +227,18 @@ class PushChannelClient {
 
   async sendPush(data: object) {
     const text = JSON.stringify(data);
-    const response = await requestAPI<any>(
-      `push-channel?channel_id=${this.channelId}&data=${text}`
-    );
-    return response.status === 200;
+    try {
+      await requestAPI<any>(
+        `push-channel?channel_id=${this.channelId}&data=${text}&recv_connection_id=${this.connection.clientId}`
+      );
+      return true;
+    } catch (e) {
+      console.log('send push error. ', e);
+      return false;
+    }
   }
 
   onNotify(e: any) {
-    console.log(e);
     if (e.event_type === 'connection.created') {
       if (e.client_id === this.connection.clientId) {
         // 自身の接続完了
@@ -213,7 +254,9 @@ class PushChannelClient {
   }
 
   onPush(e: any) {
-    this.onPushed(e.data);
+    if (e.type === 'push' && e.data.type === 'push') {
+      this.onPushed(e.data.content);
+    }
   }
 }
 
@@ -245,10 +288,24 @@ class TalkChannelClient {
     this.connection.on('removetrack', this.onRemovetrack.bind(this));
   }
 
-  async connect(stream: MediaStream, accessToken: string) {
-    this.connection.metadata = {
-      access_token: accessToken
-    };
+  async connect(
+    stream: MediaStream,
+    metadata: any,
+    signalingNotifyMetadata: any
+  ) {
+    if (metadata) {
+      this.connection.metadata = Object.assign({}, metadata);
+      if (metadata.channel_id) {
+        // Fix channelId for meeting.dev
+        this.connection.channelId = metadata.channel_id;
+        this.channelId = metadata.channel_id;
+      }
+    }
+    if (signalingNotifyMetadata) {
+      this.connection.options = Object.assign(this.connection.options, {
+        signalingNotifyMetadata: signalingNotifyMetadata
+      });
+    }
     await this.connection.connect(stream);
     return this.connection.clientId;
   }
@@ -266,8 +323,35 @@ class TalkChannelClient {
     return true;
   }
 
+  async changeSpotlightRids(myClientId: string, otherClientIds: string[]) {
+    const changeSpotlightRidRequest = {
+      item_list: otherClientIds.map(clientId => ({
+        send_connection_id: clientId,
+        spotlight_focus_rid: 'r0',
+        spotlight_unfocus_rid: 'r0'
+      })),
+      recv_connection_id: myClientId
+    };
+    try {
+      const response = await requestAPI<any>(
+        `change-spotlight-rid?channel_id=${this.channelId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(changeSpotlightRidRequest)
+        }
+      );
+      console.log(`change spotlight rid result: ${JSON.stringify(response)}`);
+      return true;
+    } catch (e) {
+      console.error('change spotlight rid error: ', e);
+      return false;
+    }
+  }
+
   onNotify(e: any) {
-    console.log(e);
     if (
       e.event_type === 'connection.created' &&
       e.connection_id === this.connection.connectionId

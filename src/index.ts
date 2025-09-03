@@ -306,7 +306,8 @@ async function initialize(platform: Platform) {
   const sfuClientManager = new SfuClientManager(
     signalingUrls,
     channelIdPrefix,
-    channelIdSuffix
+    channelIdSuffix,
+    ownUser.name
   );
 
   // コンタクトを送信
@@ -953,6 +954,8 @@ async function initialize(platform: Platform) {
       }
       // ウィジェット更新
       updateWidgets();
+      // Rid更新
+      updateSpotlightRids();
     }
   );
 
@@ -962,6 +965,8 @@ async function initialize(platform: Platform) {
     (stream: MediaStream) => {
       if (removeRemoteStream(stream.id)) {
         updateWidgets();
+        // Rid更新
+        updateSpotlightRids();
       }
     }
   );
@@ -1352,6 +1357,37 @@ async function initialize(platform: Platform) {
     miniTalkingViewWidget.hide();
     miniTalkingViewWidget.update();
   });
+
+  // meeting.dev対応
+  const updateSpotlightRids = () => {
+    const updateSpotlightRidsHandler = (timeout: number) => {
+      const myClientId = ownClient.talking_client_id;
+      const joinedUsers = allUsers.filter(user => user.is_joined);
+      const otherClientIdsList = joinedUsers.map(user =>
+        user.clients
+          .filter(client => client.talking_client_id !== '')
+          .map(client => client.talking_client_id)
+      );
+      const otherClientIds = ([] as string[]).concat(...otherClientIdsList);
+      sfuClientManager
+        .changeTakingChannelSpotlightRids(myClientId, otherClientIds)
+        .then(ok => {
+          if (!ok) {
+            // retry after timeout * 2 milliseconds later
+            console.warn(
+              `Failed to change spotlight rid, will retry after ${
+                timeout * 2
+              }ms`
+            );
+            setTimeout(
+              () => updateSpotlightRidsHandler(timeout * 2),
+              timeout * 2
+            );
+          }
+        });
+    };
+    setTimeout(() => updateSpotlightRidsHandler(500), 500);
+  };
 
   // 自身のユーザー情報を初回プッシュ
   await sendPushContact(ownClient, true);
