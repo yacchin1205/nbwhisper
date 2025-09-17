@@ -1,5 +1,7 @@
 import { requestAPI } from './handler';
 import Sora from 'sora-js-sdk';
+import { ServerConnection } from '@jupyterlab/services';
+import { Notification } from '@jupyterlab/apputils';
 
 // イベントの種類
 export class SfuClientEvent {
@@ -59,38 +61,35 @@ export class SfuClientManager {
     // チャンネル名生成
     const channelId = `${this.channelIdPrefix}waiting${this.channelIdSuffix}`;
     // アクセストークンを得る
-    try {
-      const response = await requestAPI<any>(
-        `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
-      );
-      const responseObj = JSON.parse(response.text);
-      const { metadata, signaling_notify_metadata } = responseObj;
-      this.waitingChannel = new PushChannelClient(
-        this.sora,
-        channelId,
-        data => this.onPushedWaitingChannel(data),
-        clientId => this.onClientJoinWaitingChannel(clientId),
-        clientId => this.onClientLeftWaitingChannel(clientId)
-      );
-      // 接続する
-      return (
-        (await this.waitingChannel.connect(
-          metadata,
-          signaling_notify_metadata
-        )) ?? ''
-      );
-    } catch (e) {
-      console.error('create access token error.', e);
-      return '';
+    const response = await requestAPI<any>(
+      `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
+    );
+    const responseObj = JSON.parse(response.text);
+    const { metadata, signaling_notify_metadata } = responseObj;
+    this.waitingChannel = new PushChannelClient(
+      this.sora,
+      channelId,
+      data => this.onPushedWaitingChannel(data),
+      clientId => this.onClientJoinWaitingChannel(clientId),
+      clientId => this.onClientLeftWaitingChannel(clientId)
+    );
+    // 接続する
+    const clientId = await this.waitingChannel.connect(
+      metadata,
+      signaling_notify_metadata
+    );
+    if (clientId === null) {
+      throw new Error('Waiting channel client id is null.');
     }
+    return clientId;
   }
 
   // 待機チャンネルにPushを送る
   async sendPushToWaitingChannel(data: object) {
     if (this.waitingChannel === null) {
-      return false;
+      throw new Error('waiting channel is null.');
     }
-    return await this.waitingChannel.sendPush(data);
+    await this.waitingChannel.sendPush(data);
   }
 
   onPushedWaitingChannel(data: object) {
@@ -109,38 +108,35 @@ export class SfuClientManager {
     // チャンネル名生成
     const channelId = `${this.channelIdPrefix}${roomName}${this.channelIdSuffix}`;
     // アクセストークンを得る
-    try {
-      const response = await requestAPI<any>(
-        `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
-      );
-      const responseObj = JSON.parse(response.text);
-      const { metadata, signaling_notify_metadata } = responseObj;
-      this.talkingChannel = new TalkChannelClient(
-        this.sora,
-        channelId,
-        stream => this.onTrackStreamTalkingChannel(stream),
-        stream => this.onRemoveStreamTalkingChannel(stream),
-        clientId => this.onClientLeftTalkingChannel(clientId)
-      );
-      // 接続する
-      return (
-        (await this.talkingChannel.connect(
-          localStream,
-          metadata,
-          signaling_notify_metadata
-        )) ?? ''
-      );
-    } catch (e) {
-      console.error('create access token error. ', e);
-      return '';
+    const response = await requestAPI<any>(
+      `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
+    );
+    const responseObj = JSON.parse(response.text);
+    const { metadata, signaling_notify_metadata } = responseObj;
+    this.talkingChannel = new TalkChannelClient(
+      this.sora,
+      channelId,
+      stream => this.onTrackStreamTalkingChannel(stream),
+      stream => this.onRemoveStreamTalkingChannel(stream),
+      clientId => this.onClientLeftTalkingChannel(clientId)
+    );
+    // 接続する
+    const clientId = await this.talkingChannel.connect(
+      localStream,
+      metadata,
+      signaling_notify_metadata
+    );
+    if (clientId === null) {
+      throw new Error('Talking channel client id is null.');
     }
+    return clientId;
   }
 
   async replaceTalkingChannelVideoTrack(track: MediaStreamTrack) {
     if (this.talkingChannel === null) {
-      return false;
+      throw new Error('taking channel is null');
     }
-    return await this.talkingChannel.replaceVideoTrack(track);
+    await this.talkingChannel.replaceVideoTrack(track);
   }
 
   async disconnectFromTalkingChannel() {
@@ -231,9 +227,20 @@ class PushChannelClient {
       await requestAPI<any>(
         `push-channel?channel_id=${this.channelId}&data=${text}&recv_connection_id=${this.connection.clientId}`
       );
-      return true;
     } catch (e) {
-      console.log('send push error. ', e);
+      let errMsg;
+      if (e instanceof ServerConnection.NetworkError) {
+        errMsg = `ServerConnection.NetworkError: ${(e as Error).message}`;
+      } else if (e instanceof ServerConnection.ResponseError) {
+        errMsg = `ServerConnection.ResponseError: ${(e as Error).message}`;
+      } else {
+        throw e;
+      }
+      console.error(`${errMsg} occured on sending push data.`, data);
+      // show notification
+      Notification.error(`push data error. ${errMsg}`, {
+        autoClose: false
+      });
       return false;
     }
   }
@@ -317,10 +324,9 @@ class TalkChannelClient {
   async replaceVideoTrack(track: MediaStreamTrack) {
     const stream = this.connection.stream;
     if (stream === null) {
-      return false;
+      throw new Error('connection stream is null');
     }
     await this.connection.replaceVideoTrack(stream, track);
-    return true;
   }
 
   async changeSpotlightRids(myClientId: string, otherClientIds: string[]) {
@@ -346,7 +352,15 @@ class TalkChannelClient {
       console.log(`change spotlight rid result: ${JSON.stringify(response)}`);
       return true;
     } catch (e) {
-      console.error('change spotlight rid error: ', e);
+      let errMsg;
+      if (e instanceof ServerConnection.NetworkError) {
+        errMsg = `ServerConnection.NetworkError: ${(e as Error).message}`;
+      } else if (e instanceof ServerConnection.ResponseError) {
+        errMsg = `ServerConnection.ResponseError: ${(e as Error).message}`;
+      } else {
+        throw e;
+      }
+      console.error(`${errMsg} occured on changing spotlight rid.`);
       return false;
     }
   }

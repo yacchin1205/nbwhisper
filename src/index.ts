@@ -2,6 +2,7 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { Notification } from '@jupyterlab/apputils';
 
 import { requestAPI } from './handler';
 import { WaitingUserListWidget } from './waitingUserListWidget';
@@ -10,6 +11,7 @@ import { Client, User, Invitation } from './user';
 import { UserState } from './userState';
 import { TalkingViewWidget } from './talkingViewWidget';
 import { DialogWidget } from './dialogWidget';
+import { ToastWidget } from './toastWidget';
 import Enumerable from 'linq';
 import { MiniTalkingViewWidget } from './miniTalkingViewWidget';
 import { SfuClientManager, SfuClientEvent } from './sfuClientManager';
@@ -17,6 +19,41 @@ import { generateUuid } from './uuid';
 import { DummyCanvasWidget } from './dummyCanvasWidget';
 import { RequestTalkingWidget } from './requestTalkingWidget';
 import { Platform, PlatformType, getPlatform } from './platform';
+
+// catch uncaught exception
+function exceptionHandler(event: ErrorEvent | PromiseRejectionEvent) {
+  console.error(event);
+  let type;
+  let err;
+  let msg, url, linenumber;
+  if (event instanceof ErrorEvent) {
+    type = 'Uncaught exception';
+    err = event.error || {};
+    ({ message: msg, filename: url, lineno: linenumber } = event);
+  } else {
+    type = 'Uncaught promise rejection';
+    err = event.reason || {};
+    ({
+      message: msg = 'unknown',
+      filename: url = 'unknown',
+      lineno: linenumber = -1
+    } = err);
+  }
+
+  if (
+    err.name !== null &&
+    msg !== err.name &&
+    !msg.startsWith(`${err.name}:`)
+  ) {
+    msg = `${err.name}: ${msg}`;
+  }
+
+  const errorMessage =
+    `${type} occured:\n` + `at ${url} at line ${linenumber}\n` + `${msg}`;
+  Notification.error(errorMessage, {
+    autoClose: false
+  });
+}
 
 async function getAudioStream(dummyCanvasWidget: DummyCanvasWidget) {
   const constraints = {
@@ -26,20 +63,52 @@ async function getAudioStream(dummyCanvasWidget: DummyCanvasWidget) {
     // オーディオ
     const audioStream = await navigator.mediaDevices.getUserMedia(constraints);
     const audioTrack = audioStream.getAudioTracks()[0];
-    if (!audioTrack) {
-      return null;
-    }
     // ビデオ
     const videoStream = dummyCanvasWidget.captureStream();
-    const videoTrack = videoStream?.getVideoTracks()[0];
-    if (!videoTrack) {
-      return null;
+    if (videoStream === null) {
+      throw new Error('video stream is null');
     }
+    const videoTrack = videoStream.getVideoTracks()[0];
     // 合成して返す
     return new MediaStream([videoTrack, audioTrack]);
   } catch (e) {
-    console.error('getAudioStream error:');
-    console.error(e);
+    if (e instanceof DOMException) {
+      switch (e.name) {
+        case 'AbortError':
+          // 機器が使用できない状態
+          console.warn(`cannot get audio stream: abort. ${e.message}`);
+          break;
+        case 'InvalidStateError':
+          // 現在の文書が完全にアクティブでない
+          console.warn(`cannot get audio stream: invalid state. ${e.message}`);
+          break;
+        case 'NotAllowedError':
+          // ユーザーがアクセスを拒否
+          console.warn(`cannot get audio stream: not allowed. ${e.message}`);
+          break;
+        case 'NotFoundError':
+          // メディアが見つからない
+          console.warn(`cannot get audio stream: not found. ${e.message}`);
+          break;
+        case 'NotReadableError':
+          // 機器にアクセスできない
+          console.warn(`cannot get audio stream: not readable. ${e.message}`);
+          break;
+        case 'OverconstrainedError':
+          // 要求された条件を満たす機器の候補がない
+          console.warn(`cannot get audio stream: not readable. ${e.message}`);
+          break;
+        case 'SecurityError':
+          // ユーザーメディアの対応が無効
+          console.warn(`cannot get audio stream: sercurity. ${e.message}`);
+          break;
+        default:
+          throw e;
+      }
+    } else {
+      // その他のエラー
+      throw e;
+    }
     return null;
   }
 }
@@ -53,31 +122,57 @@ async function getDisplayTrack(preferCurrentTab = false) {
   try {
     // ディスプレイ
     const displayStream = await navigator.mediaDevices.getDisplayMedia(option);
-    if (!displayStream) {
-      return null;
-    }
     return displayStream.getVideoTracks()[0];
   } catch (e) {
-    console.error('getDisplayTrack error:');
-    console.error(e);
+    if (e instanceof DOMException) {
+      switch (e.name) {
+        case 'AbortError':
+          // 他の例外以外
+          console.warn(`cannot get display track: abort. ${e.message}`);
+          break;
+        case 'InvalidStateError':
+          // ブラウザのコンテキストがアクティブでない
+          console.warn(`cannot get display track: invalid state. ${e.message}`);
+          break;
+        case 'NotAllowedError':
+          // ユーザーがアクセスを拒否
+          console.warn(`cannot get display track: not allowed. ${e.message}`);
+          break;
+        case 'NotFoundError':
+          // キャプチャ可能な映像ソースが見つからない
+          console.warn(`cannot get display track: not found. ${e.message}`);
+          break;
+        case 'NotReadableError':
+          // 選択したソースの共有ができない状態
+          console.warn(`cannot get display track: not readable. ${e.message}`);
+          break;
+        case 'OverconstrainedError':
+          // 指定された制約の適用に失敗
+          console.warn(`cannot get display track: not readable. ${e.message}`);
+          break;
+        case 'SecurityError':
+          // ユーザーメディアの対応が無効
+          console.warn(`cannot get display track: sercurity. ${e.message}`);
+          break;
+        default:
+          throw e;
+      }
+    } else {
+      // その他のエラー
+      throw e;
+    }
     return null;
   }
 }
 
 function getDummyCanvasTrack(dummyCanvasWidget: DummyCanvasWidget) {
-  try {
-    // ビデオ
-    const videoStream = dummyCanvasWidget.captureStream();
-    if (!videoStream) {
-      return null;
-    }
-    // 合成して返す
-    return videoStream.getVideoTracks()[0];
-  } catch (e) {
-    console.error('getDummyCanvasTrack error:');
-    console.error(e);
-    return null;
+  // ビデオ
+  const videoStream = dummyCanvasWidget.captureStream();
+  if (videoStream === null) {
+    throw new Error('video stream is null.');
   }
+  // 合成して返す
+  return videoStream.getVideoTracks()[0];
 }
 
 function stopMediaStream(stream: MediaStream) {
@@ -219,6 +314,10 @@ async function initialize(platform: Platform) {
   // ダミーキャンバスウィジェット
   const dummyCanvasWidget = new DummyCanvasWidget();
   Widget.attach(dummyCanvasWidget, document.body);
+
+  // トーストウィジェット
+  const toastWidget = new ToastWidget();
+  Widget.attach(toastWidget, document.body);
 
   // ウィジェットの更新
   const updateWidgets = () => {
@@ -410,13 +509,6 @@ async function initialize(platform: Platform) {
 
   // 待機チャンネルに接続
   const waitingClientId = await sfuClientManager.connectToWaitingChannel();
-  if (waitingClientId === '') {
-    // jupyterの設定が失敗した場合はここでアラート
-    alert(
-      'nbwhisperが起動できませんでした。設定を見直して再起動してください。'
-    );
-    return;
-  }
   console.log('connected to waiting channel, client id = ' + waitingClientId);
   ownClient.waiting_client_id = waitingClientId;
 
@@ -757,7 +849,7 @@ async function initialize(platform: Platform) {
       isAliveTalking = true;
     }
     if (!isAliveTalking) {
-      alert('通話が終了したため、この招待は無効になりました');
+      toastWidget.error('通話が終了したため、この招待は無効になりました');
       // 招待を無効化
       invitation.is_active = false;
       // -> 待機中
@@ -776,7 +868,7 @@ async function initialize(platform: Platform) {
       // 他タブで通話中は開始できない
       const ownState = ownUser.getState();
       if (ownState === UserState.Calling || ownState === UserState.Talking) {
-        alert(
+        toastWidget.error(
           '他のタブやウィンドウで通話中のため、新たに通話を開始することができません'
         );
         return;
@@ -787,7 +879,7 @@ async function initialize(platform: Platform) {
       // オーディオストリーム取得
       localStream = await getAudioStream(dummyCanvasWidget);
       if (!localStream) {
-        alert(
+        toastWidget.error(
           'マイクを使用することができないため、通話を開始することができませんでした'
         );
         // -> 着信中 or 待機中
@@ -805,18 +897,6 @@ async function initialize(platform: Platform) {
         invitation.room_name,
         localStream
       );
-      if (talkingClientId === '') {
-        alert('通話の開始に失敗しました');
-        stopMediaStream(localStream);
-        // 通話ビュー非表示
-        talkingViewWidget.hideWidget();
-        // -> 着信中 or 待機中
-        ownClient.state = invitation.is_active
-          ? UserState.Invited
-          : UserState.Standby;
-        await sendPushClient(ownClient);
-        return;
-      }
       console.log(
         'connected to talking channel, client id = ' + talkingClientId
       );
@@ -1002,7 +1082,7 @@ async function initialize(platform: Platform) {
       talkingViewWidget.hideWidget();
       miniTalkingViewWidget.hide();
       miniTalkingViewWidget.update();
-      alert('通話が終了されました');
+      toastWidget.info('通話が終了されました');
     }
     // ウィジェット更新
     updateWidgets();
@@ -1025,7 +1105,7 @@ async function initialize(platform: Platform) {
       // 他タブで通話中は開始できない
       const ownState = ownUser.getState();
       if (ownState === UserState.Calling || ownState === UserState.Talking) {
-        alert(
+        toastWidget.error(
           '他のタブやウィンドウで通話中のため、新たに通話を開始することができません'
         );
         // -> 待機中
@@ -1038,7 +1118,9 @@ async function initialize(platform: Platform) {
         .where(u => u.canInvite())
         .toArray();
       if (users.length === 0) {
-        alert('送信先が通話中のため、通話リクエストを送信できません');
+        toastWidget.error(
+          '送信先が通話中のため、通話リクエストを送信できません'
+        );
         // -> 待機中
         ownClient.state = UserState.Standby;
         await sendPushClient(ownClient);
@@ -1047,7 +1129,7 @@ async function initialize(platform: Platform) {
       // オーディオストリーム取得
       const stream = await getAudioStream(dummyCanvasWidget);
       if (!stream) {
-        alert(
+        toastWidget.error(
           'マイクを使用することができないため、通話を開始することができませんでした'
         );
         // -> 待機中
@@ -1063,14 +1145,6 @@ async function initialize(platform: Platform) {
         roomName,
         localStream
       );
-      if (talkingClientId === '') {
-        alert('通話の開始に失敗しました');
-        stopMediaStream(localStream);
-        // -> 待機中
-        ownClient.state = UserState.Standby;
-        await sendPushClient(ownClient);
-        return;
-      }
       console.log(
         'connected to talking channel, client id = ' + talkingClientId
       );
@@ -1117,7 +1191,9 @@ async function initialize(platform: Platform) {
         .where(u => u.canInvite())
         .toArray();
       if (users.length === 0) {
-        alert('送信先が通話中のため参加リクエストを送信できません');
+        toastWidget.error(
+          '送信先が通話中のため、通話リクエストを送信できません'
+        );
         return;
       }
       // 通話画面の参加者リストページをリセット
@@ -1172,12 +1248,7 @@ async function initialize(platform: Platform) {
       return false;
     }
     // トラックを差し替える
-    if (
-      !(await sfuClientManager.replaceTalkingChannelVideoTrack(displayTrack))
-    ) {
-      alert('ディスプレイの共有に失敗しました');
-      return false;
-    }
+    await sfuClientManager.replaceTalkingChannelVideoTrack(displayTrack);
     // 通話画面に変更を反映
     ownUser.is_sharing_display = true;
     // ウィジェット更新
@@ -1191,18 +1262,8 @@ async function initialize(platform: Platform) {
   const finishSharingDisplay = async () => {
     // ダミーキャンバストラックを取得
     const dummyCanvasTrack = getDummyCanvasTrack(dummyCanvasWidget);
-    if (!dummyCanvasTrack) {
-      return;
-    }
     // トラックを差し替える
-    if (
-      !(await sfuClientManager.replaceTalkingChannelVideoTrack(
-        dummyCanvasTrack
-      ))
-    ) {
-      alert('ディスプレイの共有停止に失敗しました');
-      return false;
-    }
+    await sfuClientManager.replaceTalkingChannelVideoTrack(dummyCanvasTrack);
     // 通話画面に変更を反映
     ownUser.is_sharing_display = false;
     // ウィジェット更新
@@ -1213,7 +1274,6 @@ async function initialize(platform: Platform) {
       ownClient.talking_room_name,
       false
     );
-    return true;
   };
 
   // 通話画面で画面共有ボタンを押したときの処理
@@ -1400,6 +1460,12 @@ function activate(app: JupyterFrontEnd) {
     const platform = await getPlatform(app);
     await initialize(platform);
   });
+
+  // catch unhandled exception
+  window.removeEventListener('error', exceptionHandler);
+  window.removeEventListener('unhandledrejection', exceptionHandler);
+  window.addEventListener('error', exceptionHandler);
+  window.addEventListener('unhandledrejection', exceptionHandler);
 }
 
 /**

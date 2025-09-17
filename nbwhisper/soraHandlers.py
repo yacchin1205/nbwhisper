@@ -17,8 +17,6 @@ class CreateAccessTokenHandler(APIHandler):
             }))
             return
         create_access_token_type = self._config.create_access_token_type
-        if (create_access_token_type == ""):
-            create_access_token_type = "sora-cloud"
         api_key = self._config.api_key
         if (create_access_token_type == "sora-cloud"):
             await self.fetch_sora_cloud_access_token(api_key, channel_id)
@@ -150,8 +148,6 @@ class PushChannelHandler(APIHandler):
             }))
             return
         push_channel_type = self._config.push_channel_type
-        if push_channel_type == "":
-            push_channel_type = "sora-cloud"
         api_key = self._config.api_key
         data = self.get_query_argument("data", "{}")
         if (data == ""):
