@@ -6,6 +6,7 @@ import { WaitingUserList } from './waitingUserList';
 import Draggable from 'react-draggable';
 import Enumerable from 'linq';
 import { UserState } from './userState';
+import { errorHandler } from './errorHandler';
 
 // 待機ユーザーリスト表示ボタン
 export function WaitingUserListButton({
@@ -119,6 +120,11 @@ export class WaitingUserListWidget extends ReactWidget {
   }
 
   render(): JSX.Element {
+    const setListVisibleHandler = errorHandler(() =>
+      this.setListVisible(!this._isListVisible)
+    );
+    const requestTalkingHandler = errorHandler(() => this._requestTalking());
+
     return (
       <React.Fragment>
         <div
@@ -132,7 +138,7 @@ export class WaitingUserListWidget extends ReactWidget {
               <WaitingUserListButton
                 isListVisible={this._isListVisible}
                 isNotebook7={this._isNotebook7}
-                onClick={() => this.setListVisible(!this._isListVisible)}
+                onClick={setListVisibleHandler}
               />
               {this._isListVisible && (
                 <div
@@ -149,7 +155,7 @@ export class WaitingUserListWidget extends ReactWidget {
                     targetNumber={Enumerable.from(this._users)
                       .where(u => u.canInvite() && u.is_selected)
                       .count()}
-                    onClick={() => this._requestTalking()}
+                    onClick={requestTalkingHandler}
                   />
                 </div>
               )}

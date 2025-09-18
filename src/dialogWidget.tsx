@@ -2,6 +2,7 @@ import * as React from 'react';
 import { ReactWidget } from '@jupyterlab/apputils';
 import { generateUuid } from './uuid';
 import Enumerable from 'linq';
+import { errorHandler } from './errorHandler';
 
 export interface IAskDialogOptions {
   body: string;
@@ -110,6 +111,9 @@ export class DialogWidget extends ReactWidget {
   }
 
   render(): JSX.Element {
+    const handleOk = errorHandler((id: string) => this._onOk(id));
+    const handleCancel = errorHandler((id: string) => this._onCancel(id));
+
     return (
       <div>
         {this._dialogUnits.map(x => (
@@ -117,8 +121,8 @@ export class DialogWidget extends ReactWidget {
             key={x.id}
             id={x.id}
             options={x.options}
-            onOk={id => this._onOk(id)}
-            onCancel={id => this._onCancel(id)}
+            onOk={handleOk}
+            onCancel={handleCancel}
           />
         ))}
       </div>

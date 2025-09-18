@@ -2,6 +2,7 @@ import * as React from 'react';
 import { ReactWidget } from '@jupyterlab/apputils';
 import { Invitation } from './user';
 import { Signal } from '@lumino/signaling';
+import { errorHandler } from './errorHandler';
 
 // 通話リクエストの通知
 export class RequestTalkingWidget extends ReactWidget {
@@ -18,6 +19,9 @@ export class RequestTalkingWidget extends ReactWidget {
   }
 
   render(): JSX.Element {
+    const handleReject = errorHandler(() => this._desideRequest(false));
+    const handleAccept = errorHandler(() => this._desideRequest(true));
+
     return (
       <div>
         {this._invitation.is_active && (
@@ -39,7 +43,7 @@ export class RequestTalkingWidget extends ReactWidget {
               <div className="nbwhisper-dialog-buttons">
                 <div
                   className={'nbwhisper-button nbwhisper-button-not-join'}
-                  onClick={() => this._desideRequest(false)}
+                  onClick={handleReject}
                 >
                   <span className="nbwhisper-button-not-join-icon" />
                   <span className="nbwhisper-button-not-join-text">
@@ -48,7 +52,7 @@ export class RequestTalkingWidget extends ReactWidget {
                 </div>
                 <div
                   className={'nbwhisper-button nbwhisper-button-join'}
-                  onClick={() => this._desideRequest(true)}
+                  onClick={handleAccept}
                 >
                   <span className="nbwhisper-button-join-icon" />
                   <span className="nbwhisper-button-join-text">参加</span>
