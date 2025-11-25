@@ -1,5 +1,7 @@
 import { requestAPI } from './handler';
 import Sora from 'sora-js-sdk';
+import { ServerConnection } from '@jupyterlab/services';
+import { Notification } from '@jupyterlab/apputils';
 
 // イベントの種類
 export class SfuClientEvent {
@@ -23,6 +25,7 @@ export class SfuClientManager {
   private sora;
   private channelIdPrefix: string;
   private channelIdSuffix: string;
+  private userDisplayName: string;
 
   private waitingChannel: PushChannelClient | null = null;
   private talkingChannel: TalkChannelClient | null = null;
@@ -32,12 +35,14 @@ export class SfuClientManager {
   constructor(
     signalingUrl: string,
     channelIdPrefix: string,
-    channelIdSuffix: string
+    channelIdSuffix: string,
+    userDisplayName: string
   ) {
     const signalingUrls = signalingUrl !== null ? signalingUrl.split(',') : [];
     this.sora = Sora.connection(signalingUrls, this.debug);
     this.channelIdPrefix = channelIdPrefix;
     this.channelIdSuffix = channelIdSuffix;
+    this.userDisplayName = userDisplayName;
   }
 
   // イベントの登録
@@ -57,31 +62,34 @@ export class SfuClientManager {
     const channelId = `${this.channelIdPrefix}waiting${this.channelIdSuffix}`;
     // アクセストークンを得る
     const response = await requestAPI<any>(
-      `create-access-token?channel_id=${channelId}`
+      `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
     );
-    if (response.status === 200) {
-      const responseObj = JSON.parse(response.text);
-      const accessToken = responseObj.access_token;
-      this.waitingChannel = new PushChannelClient(
-        this.sora,
-        channelId,
-        data => this.onPushedWaitingChannel(data),
-        clientId => this.onClientJoinWaitingChannel(clientId),
-        clientId => this.onClientLeftWaitingChannel(clientId)
-      );
-      // 接続する
-      return (await this.waitingChannel.connect(accessToken)) ?? '';
-    } else {
-      return '';
+    const responseObj = JSON.parse(response.text);
+    const { metadata, signaling_notify_metadata } = responseObj;
+    this.waitingChannel = new PushChannelClient(
+      this.sora,
+      channelId,
+      data => this.onPushedWaitingChannel(data),
+      clientId => this.onClientJoinWaitingChannel(clientId),
+      clientId => this.onClientLeftWaitingChannel(clientId)
+    );
+    // 接続する
+    const clientId = await this.waitingChannel.connect(
+      metadata,
+      signaling_notify_metadata
+    );
+    if (clientId === null) {
+      throw new Error('Waiting channel client id is null.');
     }
+    return clientId;
   }
 
   // 待機チャンネルにPushを送る
   async sendPushToWaitingChannel(data: object) {
     if (this.waitingChannel === null) {
-      return false;
+      throw new Error('waiting channel is null.');
     }
-    return await this.waitingChannel.sendPush(data);
+    await this.waitingChannel.sendPush(data);
   }
 
   onPushedWaitingChannel(data: object) {
@@ -101,32 +109,34 @@ export class SfuClientManager {
     const channelId = `${this.channelIdPrefix}${roomName}${this.channelIdSuffix}`;
     // アクセストークンを得る
     const response = await requestAPI<any>(
-      `create-access-token?channel_id=${channelId}`
+      `create-access-token?channel_id=${channelId}&user_display_name=${this.userDisplayName}`
     );
-    if (response.status === 200) {
-      const responseObj = JSON.parse(response.text);
-      const accessToken = responseObj.access_token;
-      this.talkingChannel = new TalkChannelClient(
-        this.sora,
-        channelId,
-        stream => this.onTrackStreamTalkingChannel(stream),
-        stream => this.onRemoveStreamTalkingChannel(stream),
-        clientId => this.onClientLeftTalkingChannel(clientId)
-      );
-      // 接続する
-      return (
-        (await this.talkingChannel.connect(localStream, accessToken)) ?? ''
-      );
-    } else {
-      return '';
+    const responseObj = JSON.parse(response.text);
+    const { metadata, signaling_notify_metadata } = responseObj;
+    this.talkingChannel = new TalkChannelClient(
+      this.sora,
+      channelId,
+      stream => this.onTrackStreamTalkingChannel(stream),
+      stream => this.onRemoveStreamTalkingChannel(stream),
+      clientId => this.onClientLeftTalkingChannel(clientId)
+    );
+    // 接続する
+    const clientId = await this.talkingChannel.connect(
+      localStream,
+      metadata,
+      signaling_notify_metadata
+    );
+    if (clientId === null) {
+      throw new Error('Talking channel client id is null.');
     }
+    return clientId;
   }
 
   async replaceTalkingChannelVideoTrack(track: MediaStreamTrack) {
     if (this.talkingChannel === null) {
-      return false;
+      throw new Error('taking channel is null');
     }
-    return await this.talkingChannel.replaceVideoTrack(track);
+    await this.talkingChannel.replaceVideoTrack(track);
   }
 
   async disconnectFromTalkingChannel() {
@@ -134,6 +144,19 @@ export class SfuClientManager {
       return;
     }
     await this.talkingChannel.disconnect();
+  }
+
+  // 通話チャンネルを通してクライアントの focus_rid, unfocus_rid を変更する
+  async changeTakingChannelSpotlightRids(
+    myClientId: string,
+    otherClientIds: string[]
+  ) {
+    return (
+      (await this.talkingChannel?.changeSpotlightRids(
+        myClientId,
+        otherClientIds
+      )) ?? false
+    );
   }
 
   onTrackStreamTalkingChannel(stream: MediaStream) {
@@ -176,10 +199,20 @@ class PushChannelClient {
     this.connection.on('push', this.onPush.bind(this));
   }
 
-  async connect(accessToken: string) {
-    this.connection.metadata = {
-      access_token: accessToken
-    };
+  async connect(metadata: any, signalingNotifyMetadata: any) {
+    if (metadata) {
+      this.connection.metadata = Object.assign({}, metadata);
+      if (metadata.channel_id) {
+        // Fix channelId for meeting.dev
+        this.connection.channelId = metadata.channel_id;
+        this.channelId = metadata.channel_id;
+      }
+    }
+    if (signalingNotifyMetadata) {
+      this.connection.options = Object.assign(this.connection.options, {
+        signalingNotifyMetadata: signalingNotifyMetadata
+      });
+    }
     await this.connection.connect();
     return this.connection.clientId;
   }
@@ -190,14 +223,29 @@ class PushChannelClient {
 
   async sendPush(data: object) {
     const text = JSON.stringify(data);
-    const response = await requestAPI<any>(
-      `push-channel?channel_id=${this.channelId}&data=${text}`
-    );
-    return response.status === 200;
+    try {
+      await requestAPI<any>(
+        `push-channel?channel_id=${this.channelId}&data=${text}&recv_connection_id=${this.connection.clientId}`
+      );
+    } catch (e) {
+      let errMsg;
+      if (e instanceof ServerConnection.NetworkError) {
+        errMsg = `ServerConnection.NetworkError: ${(e as Error).message}`;
+      } else if (e instanceof ServerConnection.ResponseError) {
+        errMsg = `ServerConnection.ResponseError: ${(e as Error).message}`;
+      } else {
+        throw e;
+      }
+      console.error(`${errMsg} occured on sending push data.`, data);
+      // show notification
+      Notification.error(`push data error. ${errMsg}`, {
+        autoClose: false
+      });
+      return false;
+    }
   }
 
   onNotify(e: any) {
-    console.log(e);
     if (e.event_type === 'connection.created') {
       if (e.client_id === this.connection.clientId) {
         // 自身の接続完了
@@ -213,7 +261,9 @@ class PushChannelClient {
   }
 
   onPush(e: any) {
-    this.onPushed(e.data);
+    if (e.type === 'push' && e.data.type === 'push') {
+      this.onPushed(e.data.content);
+    }
   }
 }
 
@@ -245,10 +295,24 @@ class TalkChannelClient {
     this.connection.on('removetrack', this.onRemovetrack.bind(this));
   }
 
-  async connect(stream: MediaStream, accessToken: string) {
-    this.connection.metadata = {
-      access_token: accessToken
-    };
+  async connect(
+    stream: MediaStream,
+    metadata: any,
+    signalingNotifyMetadata: any
+  ) {
+    if (metadata) {
+      this.connection.metadata = Object.assign({}, metadata);
+      if (metadata.channel_id) {
+        // Fix channelId for meeting.dev
+        this.connection.channelId = metadata.channel_id;
+        this.channelId = metadata.channel_id;
+      }
+    }
+    if (signalingNotifyMetadata) {
+      this.connection.options = Object.assign(this.connection.options, {
+        signalingNotifyMetadata: signalingNotifyMetadata
+      });
+    }
     await this.connection.connect(stream);
     return this.connection.clientId;
   }
@@ -260,14 +324,48 @@ class TalkChannelClient {
   async replaceVideoTrack(track: MediaStreamTrack) {
     const stream = this.connection.stream;
     if (stream === null) {
-      return false;
+      throw new Error('connection stream is null');
     }
     await this.connection.replaceVideoTrack(stream, track);
-    return true;
+  }
+
+  async changeSpotlightRids(myClientId: string, otherClientIds: string[]) {
+    const changeSpotlightRidRequest = {
+      item_list: otherClientIds.map(clientId => ({
+        send_connection_id: clientId,
+        spotlight_focus_rid: 'r0',
+        spotlight_unfocus_rid: 'r0'
+      })),
+      recv_connection_id: myClientId
+    };
+    try {
+      const response = await requestAPI<any>(
+        `change-spotlight-rid?channel_id=${this.channelId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(changeSpotlightRidRequest)
+        }
+      );
+      console.log(`change spotlight rid result: ${JSON.stringify(response)}`);
+      return true;
+    } catch (e) {
+      let errMsg;
+      if (e instanceof ServerConnection.NetworkError) {
+        errMsg = `ServerConnection.NetworkError: ${(e as Error).message}`;
+      } else if (e instanceof ServerConnection.ResponseError) {
+        errMsg = `ServerConnection.ResponseError: ${(e as Error).message}`;
+      } else {
+        throw e;
+      }
+      console.error(`${errMsg} occured on changing spotlight rid.`);
+      return false;
+    }
   }
 
   onNotify(e: any) {
-    console.log(e);
     if (
       e.event_type === 'connection.created' &&
       e.connection_id === this.connection.connectionId

@@ -61,6 +61,7 @@
     "linq": "^4.0.2",
     "os-browserify": "^0.3.0",
     "react-draggable": "^4.4.6",
+    "react-hot-toast": "^2.6.0",
     "sora-js-sdk": "^2023.2.0"
   },
   "devDependencies": {

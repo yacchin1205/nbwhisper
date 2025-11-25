@@ -6,6 +6,7 @@ import { WaitingUserList } from './waitingUserList';
 import Enumerable from 'linq';
 import { RemoteMedia } from './remoteMedia';
 import { UserState } from './userState';
+import { errorHandler } from './errorHandler';
 
 // 参加者リスト
 export function TalkingUserList({
@@ -74,7 +75,9 @@ export function TalkingUserList({
                     {hoveringIndex === index && (
                       <div
                         className="nbwhisper-talking-view-user-list-cancel-button"
-                        onClick={() => onCancel(callingUsers[index])}
+                        onClick={errorHandler(() =>
+                          onCancel(callingUsers[index])
+                        )}
                       >
                         取消
                       </div>
@@ -209,6 +212,28 @@ export class TalkingViewWidget extends ReactWidget {
 
   render(): JSX.Element {
     const isCalling = this._ownUser.getState() === UserState.Calling;
+
+    // Error handled event handlers
+    const handleCancelUser = errorHandler((user: User) =>
+      this._onCancelCallingUser(user)
+    );
+    const handleHideUserList = errorHandler(() => this._hideUserList());
+    const handleChangePageTo1 = errorHandler(() => this._changeUserListPage(1));
+    const handleChangePageTo0 = errorHandler(() => this._changeUserListPage(0));
+    const handleRequestJoining = errorHandler(() => this._requestJoining());
+    const handleMinimizeTalking = errorHandler(() =>
+      this._minimizeTalkingView()
+    );
+    const handleMuteOff = errorHandler(() => this._setMute(false));
+    const handleMuteOn = errorHandler(() => this._setMute(true));
+    const handleStopSharing = errorHandler(() =>
+      this._setSharingDisplay(false)
+    );
+    const handleStartSharing = errorHandler(() =>
+      this._setSharingDisplay(true)
+    );
+    const handleHungUp = errorHandler(() => this._onHungUp());
+    const handleShowUserList = errorHandler(() => this._showUserList());
     return (
       <div
         className={`nbwhisper-talking-view ${
@@ -286,17 +311,17 @@ export class TalkingViewWidget extends ReactWidget {
                     </div>
                     <div
                       className="nbwhisper-talking-view-user-list-header-close-button"
-                      onClick={() => this._hideUserList()}
+                      onClick={handleHideUserList}
                     />
                   </div>
                   <TalkingUserList
                     users={this._users}
-                    onCancel={user => this._onCancelCallingUser(user)}
+                    onCancel={handleCancelUser}
                   />
                   <div className="nbwhisper-talking-view-user-list-footer">
                     <div
                       className="nbwhisper-button nbwhisper-button-normal nbwhisper-talking-view-user-list-add-member-button"
-                      onClick={() => this._changeUserListPage(1)}
+                      onClick={handleChangePageTo1}
                     >
                       <div className="nbwhisper-talking-view-user-list-add-member-button-icon" />
                       <span>参加者を追加</span>
@@ -309,14 +334,14 @@ export class TalkingViewWidget extends ReactWidget {
                   <div className="nbwhisper-talking-view-user-list-header">
                     <div
                       className="nbwhisper-talking-view-user-list-header-back-button"
-                      onClick={() => this._changeUserListPage(0)}
+                      onClick={handleChangePageTo0}
                     />
                     <div className="nbwhisper-talking-view-user-list-header-caption">
                       参加者を追加
                     </div>
                     <div
                       className="nbwhisper-talking-view-user-list-header-close-button"
-                      onClick={() => this._hideUserList()}
+                      onClick={handleHideUserList}
                     />
                   </div>
                   <WaitingUserList
@@ -330,7 +355,7 @@ export class TalkingViewWidget extends ReactWidget {
                     targetNumber={Enumerable.from(this._users)
                       .where(u => u.canInvite() && u.is_selected)
                       .count()}
-                    onClick={() => this._requestJoining()}
+                    onClick={handleRequestJoining}
                   />
                 </React.Fragment>
               )}
@@ -343,7 +368,7 @@ export class TalkingViewWidget extends ReactWidget {
               className={`nbwhisper-talking-view-button nbwhisper-talking-view-close-button ${
                 isCalling && 'disabled'
               }`}
-              onClick={() => this._minimizeTalkingView()}
+              onClick={handleMinimizeTalking}
               title="通話画面を隠す"
             />
           </div>
@@ -351,13 +376,13 @@ export class TalkingViewWidget extends ReactWidget {
             {this._ownUser.is_mute ? (
               <div
                 className="nbwhisper-talking-view-button nbwhisper-talking-view-mute-off-button"
-                onClick={() => this._setMute(false)}
+                onClick={handleMuteOff}
                 title="マイクをオン"
               />
             ) : (
               <div
                 className="nbwhisper-talking-view-button nbwhisper-talking-view-mute-on-button"
-                onClick={() => this._setMute(true)}
+                onClick={handleMuteOn}
                 title="マイクをオフ"
               />
             )}
@@ -366,7 +391,7 @@ export class TalkingViewWidget extends ReactWidget {
                 className={`nbwhisper-talking-view-button nbwhisper-talking-view-share-display-off-button ${
                   isCalling && 'disabled'
                 }`}
-                onClick={() => this._setSharingDisplay(false)}
+                onClick={handleStopSharing}
                 title="画面共有を終了"
               />
             ) : (
@@ -374,13 +399,13 @@ export class TalkingViewWidget extends ReactWidget {
                 className={`nbwhisper-talking-view-button nbwhisper-talking-view-share-display-on-button ${
                   isCalling && 'disabled'
                 }`}
-                onClick={() => this._setSharingDisplay(true)}
+                onClick={handleStartSharing}
                 title="画面を共有"
               />
             )}
             <div
               className="nbwhisper-talking-view-button nbwhisper-talking-view-hung-up-button"
-              onClick={() => this._onHungUp()}
+              onClick={handleHungUp}
               title="通話から退出"
             />
           </div>
@@ -390,7 +415,7 @@ export class TalkingViewWidget extends ReactWidget {
                 className={`nbwhisper-talking-view-button nbwhisper-talking-view-hide-members-button ${
                   isCalling && 'disabled'
                 }`}
-                onClick={() => this._hideUserList()}
+                onClick={handleHideUserList}
                 title="参加者を表示"
               />
             ) : (
@@ -398,7 +423,7 @@ export class TalkingViewWidget extends ReactWidget {
                 className={`nbwhisper-talking-view-button nbwhisper-talking-view-show-members-button ${
                   isCalling && 'disabled'
                 }`}
-                onClick={() => this._showUserList()}
+                onClick={handleShowUserList}
                 title="参加者を隠す"
               />
             )}

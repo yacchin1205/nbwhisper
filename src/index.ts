@@ -10,6 +10,7 @@ import { Client, User, Invitation } from './user';
 import { UserState } from './userState';
 import { TalkingViewWidget } from './talkingViewWidget';
 import { DialogWidget } from './dialogWidget';
+import { ToastWidget } from './toastWidget';
 import Enumerable from 'linq';
 import { MiniTalkingViewWidget } from './miniTalkingViewWidget';
 import { SfuClientManager, SfuClientEvent } from './sfuClientManager';
@@ -17,6 +18,7 @@ import { generateUuid } from './uuid';
 import { DummyCanvasWidget } from './dummyCanvasWidget';
 import { RequestTalkingWidget } from './requestTalkingWidget';
 import { Platform, PlatformType, getPlatform } from './platform';
+import { errorHandler } from './errorHandler';
 
 async function getAudioStream(dummyCanvasWidget: DummyCanvasWidget) {
   const constraints = {
@@ -26,20 +28,52 @@ async function getAudioStream(dummyCanvasWidget: DummyCanvasWidget) {
     // オーディオ
     const audioStream = await navigator.mediaDevices.getUserMedia(constraints);
     const audioTrack = audioStream.getAudioTracks()[0];
-    if (!audioTrack) {
-      return null;
-    }
     // ビデオ
     const videoStream = dummyCanvasWidget.captureStream();
-    const videoTrack = videoStream?.getVideoTracks()[0];
-    if (!videoTrack) {
-      return null;
+    if (videoStream === null) {
+      throw new Error('video stream is null');
     }
+    const videoTrack = videoStream.getVideoTracks()[0];
     // 合成して返す
     return new MediaStream([videoTrack, audioTrack]);
   } catch (e) {
-    console.error('getAudioStream error:');
-    console.error(e);
+    if (e instanceof DOMException) {
+      switch (e.name) {
+        case 'AbortError':
+          // 機器が使用できない状態
+          console.warn(`cannot get audio stream: abort. ${e.message}`);
+          break;
+        case 'InvalidStateError':
+          // 現在の文書が完全にアクティブでない
+          console.warn(`cannot get audio stream: invalid state. ${e.message}`);
+          break;
+        case 'NotAllowedError':
+          // ユーザーがアクセスを拒否
+          console.warn(`cannot get audio stream: not allowed. ${e.message}`);
+          break;
+        case 'NotFoundError':
+          // メディアが見つからない
+          console.warn(`cannot get audio stream: not found. ${e.message}`);
+          break;
+        case 'NotReadableError':
+          // 機器にアクセスできない
+          console.warn(`cannot get audio stream: not readable. ${e.message}`);
+          break;
+        case 'OverconstrainedError':
+          // 要求された条件を満たす機器の候補がない
+          console.warn(`cannot get audio stream: not readable. ${e.message}`);
+          break;
+        case 'SecurityError':
+          // ユーザーメディアの対応が無効
+          console.warn(`cannot get audio stream: sercurity. ${e.message}`);
+          break;
+        default:
+          throw e;
+      }
+    } else {
+      // その他のエラー
+      throw e;
+    }
     return null;
   }
 }
@@ -53,31 +87,57 @@ async function getDisplayTrack(preferCurrentTab = false) {
   try {
     // ディスプレイ
     const displayStream = await navigator.mediaDevices.getDisplayMedia(option);
-    if (!displayStream) {
-      return null;
-    }
     return displayStream.getVideoTracks()[0];
   } catch (e) {
-    console.error('getDisplayTrack error:');
-    console.error(e);
+    if (e instanceof DOMException) {
+      switch (e.name) {
+        case 'AbortError':
+          // 他の例外以外
+          console.warn(`cannot get display track: abort. ${e.message}`);
+          break;
+        case 'InvalidStateError':
+          // ブラウザのコンテキストがアクティブでない
+          console.warn(`cannot get display track: invalid state. ${e.message}`);
+          break;
+        case 'NotAllowedError':
+          // ユーザーがアクセスを拒否
+          console.warn(`cannot get display track: not allowed. ${e.message}`);
+          break;
+        case 'NotFoundError':
+          // キャプチャ可能な映像ソースが見つからない
+          console.warn(`cannot get display track: not found. ${e.message}`);
+          break;
+        case 'NotReadableError':
+          // 選択したソースの共有ができない状態
+          console.warn(`cannot get display track: not readable. ${e.message}`);
+          break;
+        case 'OverconstrainedError':
+          // 指定された制約の適用に失敗
+          console.warn(`cannot get display track: not readable. ${e.message}`);
+          break;
+        case 'SecurityError':
+          // ユーザーメディアの対応が無効
+          console.warn(`cannot get display track: sercurity. ${e.message}`);
+          break;
+        default:
+          throw e;
+      }
+    } else {
+      // その他のエラー
+      throw e;
+    }
     return null;
   }
 }
 
 function getDummyCanvasTrack(dummyCanvasWidget: DummyCanvasWidget) {
-  try {
-    // ビデオ
-    const videoStream = dummyCanvasWidget.captureStream();
-    if (!videoStream) {
-      return null;
-    }
-    // 合成して返す
-    return videoStream.getVideoTracks()[0];
-  } catch (e) {
-    console.error('getDummyCanvasTrack error:');
-    console.error(e);
-    return null;
+  // ビデオ
+  const videoStream = dummyCanvasWidget.captureStream();
+  if (videoStream === null) {
+    throw new Error('video stream is null.');
   }
+  // 合成して返す
+  return videoStream.getVideoTracks()[0];
 }
 
 function stopMediaStream(stream: MediaStream) {
@@ -220,6 +280,10 @@ async function initialize(platform: Platform) {
   const dummyCanvasWidget = new DummyCanvasWidget();
   Widget.attach(dummyCanvasWidget, document.body);
 
+  // トーストウィジェット
+  const toastWidget = new ToastWidget();
+  Widget.attach(toastWidget, document.body);
+
   // ウィジェットの更新
   const updateWidgets = () => {
     waitingUserListWidget.update();
@@ -306,7 +370,8 @@ async function initialize(platform: Platform) {
   const sfuClientManager = new SfuClientManager(
     signalingUrls,
     channelIdPrefix,
-    channelIdSuffix
+    channelIdSuffix,
+    ownUser.name
   );
 
   // コンタクトを送信
@@ -409,13 +474,6 @@ async function initialize(platform: Platform) {
 
   // 待機チャンネルに接続
   const waitingClientId = await sfuClientManager.connectToWaitingChannel();
-  if (waitingClientId === '') {
-    // jupyterの設定が失敗した場合はここでアラート
-    alert(
-      'nbwhisperが起動できませんでした。設定を見直して再起動してください。'
-    );
-    return;
-  }
   console.log('connected to waiting channel, client id = ' + waitingClientId);
   ownClient.waiting_client_id = waitingClientId;
 
@@ -739,122 +797,112 @@ async function initialize(platform: Platform) {
   });
 
   // 通話リクエスト通知ウィジェットで決定した場合
-  requestTalkingWidget.onDesideRequest.connect(async (_, isOk) => {
-    if (!invitation.is_active) {
-      // 招待自体がない
-      return;
-    }
+  requestTalkingWidget.onDesideRequest.connect(
+    errorHandler(async (_, isOk) => {
+      if (!invitation.is_active) {
+        // 招待自体がない
+        return;
+      }
 
-    let isAliveTalking = false;
-    // 招待情報のルーム名に参加しているユーザーの存在を確認する
-    const roomName = invitation.room_name;
-    if (
-      Enumerable.from(allUsers)
-        .where(u => u.isJoiningTalkingRoom(roomName))
-        .any()
-    ) {
-      isAliveTalking = true;
-    }
-    if (!isAliveTalking) {
-      alert('通話が終了したため、この招待は無効になりました');
-      // 招待を無効化
-      invitation.is_active = false;
-      // -> 待機中
-      ownClient.state = UserState.Standby;
-      await sendPushClient(ownClient);
-      // ウィジェット更新
-      updateWidgets();
-      return;
-    }
+      let isAliveTalking = false;
+      // 招待情報のルーム名に参加しているユーザーの存在を確認する
+      const roomName = invitation.room_name;
+      if (
+        Enumerable.from(allUsers)
+          .where(u => u.isJoiningTalkingRoom(roomName))
+          .any()
+      ) {
+        isAliveTalking = true;
+      }
+      if (!isAliveTalking) {
+        toastWidget.error('通話が終了したため、この招待は無効になりました');
+        // 招待を無効化
+        invitation.is_active = false;
+        // -> 待機中
+        ownClient.state = UserState.Standby;
+        await sendPushClient(ownClient);
+        // ウィジェット更新
+        updateWidgets();
+        return;
+      }
 
-    if (isOk) {
-      // 自身通話中は処理しない
-      if (ownClient.state === UserState.Talking) {
-        return;
-      }
-      // 他タブで通話中は開始できない
-      const ownState = ownUser.getState();
-      if (ownState === UserState.Calling || ownState === UserState.Talking) {
-        alert(
-          '他のタブやウィンドウで通話中のため、新たに通話を開始することができません'
-        );
-        return;
-      }
-      // -> 通話中
-      ownClient.state = UserState.Talking;
-      await sendPushClient(ownClient);
-      // オーディオストリーム取得
-      localStream = await getAudioStream(dummyCanvasWidget);
-      if (!localStream) {
-        alert(
-          'マイクを使用することができないため、通話を開始することができませんでした'
-        );
-        // -> 着信中 or 待機中
-        ownClient.state = invitation.is_active
-          ? UserState.Invited
-          : UserState.Standby;
+      if (isOk) {
+        // 自身通話中は処理しない
+        if (ownClient.state === UserState.Talking) {
+          return;
+        }
+        // 他タブで通話中は開始できない
+        const ownState = ownUser.getState();
+        if (ownState === UserState.Calling || ownState === UserState.Talking) {
+          toastWidget.error(
+            '他のタブやウィンドウで通話中のため、新たに通話を開始することができません'
+          );
+          return;
+        }
+        // -> 通話中
+        ownClient.state = UserState.Talking;
         await sendPushClient(ownClient);
-        return;
-      }
-      console.log('local stream id = ' + localStream.id);
-      // 通話ビュー表示
-      talkingViewWidget.showWidget();
-      // ルームに入る
-      const talkingClientId = await sfuClientManager.connectToTalkingChannel(
-        invitation.room_name,
-        localStream
-      );
-      if (talkingClientId === '') {
-        alert('通話の開始に失敗しました');
-        stopMediaStream(localStream);
-        // 通話ビュー非表示
-        talkingViewWidget.hideWidget();
-        // -> 着信中 or 待機中
-        ownClient.state = invitation.is_active
-          ? UserState.Invited
-          : UserState.Standby;
+        // オーディオストリーム取得
+        localStream = await getAudioStream(dummyCanvasWidget);
+        if (!localStream) {
+          toastWidget.error(
+            'マイクを使用することができないため、通話を開始することができませんでした'
+          );
+          // -> 着信中 or 待機中
+          ownClient.state = invitation.is_active
+            ? UserState.Invited
+            : UserState.Standby;
+          await sendPushClient(ownClient);
+          return;
+        }
+        console.log('local stream id = ' + localStream.id);
+        // 通話ビュー表示
+        talkingViewWidget.showWidget();
+        // ルームに入る
+        const talkingClientId = await sfuClientManager.connectToTalkingChannel(
+          invitation.room_name,
+          localStream
+        );
+        console.log(
+          'connected to talking channel, client id = ' + talkingClientId
+        );
+        ownClient.talking_client_id = talkingClientId;
+        ownClient.talking_room_name = invitation.room_name;
         await sendPushClient(ownClient);
-        return;
+        // 待機ユーザーリスト非表示
+        waitingUserListWidget.setListVisible(false);
+        waitingUserListWidget.hide();
+        // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
+        invitation.is_active = false;
+        await sendPushCancelInvite(
+          ownUser.name,
+          invitation.from_user_name,
+          invitation.room_name
+        );
+        // ウィジェット更新
+        updateWidgets();
+      } else {
+        // 通話リクエストを拒絶
+        await sendPushRefuseInvite(
+          invitation.from_user_name,
+          ownUser.name,
+          invitation.room_name
+        );
+        // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
+        invitation.is_active = false;
+        await sendPushCancelInvite(
+          ownUser.name,
+          invitation.from_user_name,
+          invitation.room_name
+        );
+        // -> 待機中
+        ownClient.state = UserState.Standby;
+        await sendPushClient(ownClient);
+        // ウィジェット更新
+        updateWidgets();
       }
-      console.log(
-        'connected to talking channel, client id = ' + talkingClientId
-      );
-      ownClient.talking_client_id = talkingClientId;
-      ownClient.talking_room_name = invitation.room_name;
-      await sendPushClient(ownClient);
-      // 待機ユーザーリスト非表示
-      waitingUserListWidget.setListVisible(false);
-      waitingUserListWidget.hide();
-      // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
-      invitation.is_active = false;
-      await sendPushCancelInvite(
-        ownUser.name,
-        invitation.from_user_name,
-        invitation.room_name
-      );
-      // ウィジェット更新
-      updateWidgets();
-    } else {
-      // 通話リクエストを拒絶
-      await sendPushRefuseInvite(
-        invitation.from_user_name,
-        ownUser.name,
-        invitation.room_name
-      );
-      // 招待を無効して、他のタブ・ウィンドウに対しても招待キャンセルを送信
-      invitation.is_active = false;
-      await sendPushCancelInvite(
-        ownUser.name,
-        invitation.from_user_name,
-        invitation.room_name
-      );
-      // -> 待機中
-      ownClient.state = UserState.Standby;
-      await sendPushClient(ownClient);
-      // ウィジェット更新
-      updateWidgets();
-    }
-  });
+    })
+  );
 
   // 待機チャンネルにクライアントが参加した場合
   sfuClientManager.on(SfuClientEvent.ClientJoinWaiting, (clientId: string) => {
@@ -953,6 +1001,8 @@ async function initialize(platform: Platform) {
       }
       // ウィジェット更新
       updateWidgets();
+      // Rid更新
+      updateSpotlightRids();
     }
   );
 
@@ -962,6 +1012,8 @@ async function initialize(platform: Platform) {
     (stream: MediaStream) => {
       if (removeRemoteStream(stream.id)) {
         updateWidgets();
+        // Rid更新
+        updateSpotlightRids();
       }
     }
   );
@@ -997,166 +1049,170 @@ async function initialize(platform: Platform) {
       talkingViewWidget.hideWidget();
       miniTalkingViewWidget.hide();
       miniTalkingViewWidget.update();
-      alert('通話が終了されました');
+      toastWidget.info('通話が終了されました');
     }
     // ウィジェット更新
     updateWidgets();
   });
 
   // 待機ユーザーリストでリストの表示状態を切り替えた
-  waitingUserListWidget.onSetVisibleList.connect(async (_, isVisible) => {
-    if (isVisible) {
-      // 初回のContact送信がうまくいかないことがあるので、再度送る
-      await sendPushContact(ownClient, true);
-    }
-  });
+  waitingUserListWidget.onSetVisibleList.connect(
+    errorHandler(async (_, isVisible) => {
+      if (isVisible) {
+        // 初回のContact送信がうまくいかないことがあるので、再度送る
+        await sendPushContact(ownClient, true);
+      }
+    })
+  );
 
   // 待機ユーザーリストで「通話をリクエスト」ボタンをクリックした
-  waitingUserListWidget.onRequestTalking.connect(async (_, users) => {
-    // -> 通話リクエスト確認中
-    ownClient.state = UserState.Confirming;
-    await sendPushClient(ownClient);
-    if (await showRequestTalkingDialog(users)) {
-      // 他タブで通話中は開始できない
-      const ownState = ownUser.getState();
-      if (ownState === UserState.Calling || ownState === UserState.Talking) {
-        alert(
-          '他のタブやウィンドウで通話中のため、新たに通話を開始することができません'
-        );
-        // -> 待機中
-        ownClient.state = UserState.Standby;
-        await sendPushClient(ownClient);
-        return;
-      }
-      // 現在の状態が招待可能なユーザーのみ対象とする
-      users = Enumerable.from(users)
-        .where(u => u.canInvite())
-        .toArray();
-      if (users.length === 0) {
-        alert('送信先が通話中のため、通話リクエストを送信できません');
-        // -> 待機中
-        ownClient.state = UserState.Standby;
-        await sendPushClient(ownClient);
-        return;
-      }
-      // オーディオストリーム取得
-      const stream = await getAudioStream(dummyCanvasWidget);
-      if (!stream) {
-        alert(
-          'マイクを使用することができないため、通話を開始することができませんでした'
-        );
-        // -> 待機中
-        ownClient.state = UserState.Standby;
-        await sendPushClient(ownClient);
-        return;
-      }
-      localStream = stream;
-      console.log('local stream id = ' + localStream.id);
-      // 通話ルーム名を作成して新規接続
-      const roomName = 'talking-' + generateUuid();
-      const talkingClientId = await sfuClientManager.connectToTalkingChannel(
-        roomName,
-        localStream
-      );
-      if (talkingClientId === '') {
-        alert('通話の開始に失敗しました');
-        stopMediaStream(localStream);
-        // -> 待機中
-        ownClient.state = UserState.Standby;
-        await sendPushClient(ownClient);
-        return;
-      }
-      console.log(
-        'connected to talking channel, client id = ' + talkingClientId
-      );
-      ownClient.talking_client_id = talkingClientId;
-      ownClient.talking_room_name = roomName;
-      // 選択ユーザーに招待中フラグを立て、選択を外す
-      users.forEach(u => {
-        u.is_invited = true;
-        u.is_selected = false;
-      });
-      // ウィジェット更新
-      updateWidgets();
-      // 通話ビュー表示
-      talkingViewWidget.showWidget();
-      // 招待を送る
-      const userNames = Enumerable.from(users)
-        .select(u => u.name)
-        .toArray();
-      await sendPushInvite(
-        userNames,
-        ownUser.name,
-        roomName,
-        talkingClientId,
-        []
-      );
-      // 待機ユーザーリスト非表示
-      waitingUserListWidget.setListVisible(false);
-      waitingUserListWidget.hide();
-      // -> 呼び出し中
-      ownClient.state = UserState.Calling;
+  waitingUserListWidget.onRequestTalking.connect(
+    errorHandler(async (_, users) => {
+      // -> 通話リクエスト確認中
+      ownClient.state = UserState.Confirming;
       await sendPushClient(ownClient);
-    } else {
-      // -> 待機中
-      ownClient.state = UserState.Standby;
-      await sendPushClient(ownClient);
-    }
-  });
+      if (await showRequestTalkingDialog(users)) {
+        // 他タブで通話中は開始できない
+        const ownState = ownUser.getState();
+        if (ownState === UserState.Calling || ownState === UserState.Talking) {
+          toastWidget.error(
+            '他のタブやウィンドウで通話中のため、新たに通話を開始することができません'
+          );
+          // -> 待機中
+          ownClient.state = UserState.Standby;
+          await sendPushClient(ownClient);
+          return;
+        }
+        // 現在の状態が招待可能なユーザーのみ対象とする
+        users = Enumerable.from(users)
+          .where(u => u.canInvite())
+          .toArray();
+        if (users.length === 0) {
+          toastWidget.error(
+            '送信先が通話中のため、通話リクエストを送信できません'
+          );
+          // -> 待機中
+          ownClient.state = UserState.Standby;
+          await sendPushClient(ownClient);
+          return;
+        }
+        // オーディオストリーム取得
+        const stream = await getAudioStream(dummyCanvasWidget);
+        if (!stream) {
+          toastWidget.error(
+            'マイクを使用することができないため、通話を開始することができませんでした'
+          );
+          // -> 待機中
+          ownClient.state = UserState.Standby;
+          await sendPushClient(ownClient);
+          return;
+        }
+        localStream = stream;
+        console.log('local stream id = ' + localStream.id);
+        // 通話ルーム名を作成して新規接続
+        const roomName = 'talking-' + generateUuid();
+        const talkingClientId = await sfuClientManager.connectToTalkingChannel(
+          roomName,
+          localStream
+        );
+        console.log(
+          'connected to talking channel, client id = ' + talkingClientId
+        );
+        ownClient.talking_client_id = talkingClientId;
+        ownClient.talking_room_name = roomName;
+        // 選択ユーザーに招待中フラグを立て、選択を外す
+        users.forEach(u => {
+          u.is_invited = true;
+          u.is_selected = false;
+        });
+        // ウィジェット更新
+        updateWidgets();
+        // 通話ビュー表示
+        talkingViewWidget.showWidget();
+        // 招待を送る
+        const userNames = Enumerable.from(users)
+          .select(u => u.name)
+          .toArray();
+        await sendPushInvite(
+          userNames,
+          ownUser.name,
+          roomName,
+          talkingClientId,
+          []
+        );
+        // 待機ユーザーリスト非表示
+        waitingUserListWidget.setListVisible(false);
+        waitingUserListWidget.hide();
+        // -> 呼び出し中
+        ownClient.state = UserState.Calling;
+        await sendPushClient(ownClient);
+      } else {
+        // -> 待機中
+        ownClient.state = UserState.Standby;
+        await sendPushClient(ownClient);
+      }
+    })
+  );
 
   // 通話画面で「参加をリクエスト」ボタンをクリックした
-  talkingViewWidget.onResuestJoining.connect(async (_, users) => {
-    if (await showRequestJoiningDialog(users)) {
-      // 現在の状態が招待可能なユーザーのみ対象とする
-      users = Enumerable.from(users)
-        .where(u => u.canInvite())
-        .toArray();
-      if (users.length === 0) {
-        alert('送信先が通話中のため参加リクエストを送信できません');
-        return;
-      }
-      // 通話画面の参加者リストページをリセット
-      talkingViewWidget.changeUserListPage(0);
-      // 現在の参加者
-      let joiningUsers = [ownUser.name];
-      joiningUsers = joiningUsers.concat(
-        Enumerable.from(allUsers)
-          .where(u => u.is_joined)
+  talkingViewWidget.onResuestJoining.connect(
+    errorHandler(async (_, users) => {
+      if (await showRequestJoiningDialog(users)) {
+        // 現在の状態が招待可能なユーザーのみ対象とする
+        users = Enumerable.from(users)
+          .where(u => u.canInvite())
+          .toArray();
+        if (users.length === 0) {
+          toastWidget.error(
+            '送信先が通話中のため、通話リクエストを送信できません'
+          );
+          return;
+        }
+        // 通話画面の参加者リストページをリセット
+        talkingViewWidget.changeUserListPage(0);
+        // 現在の参加者
+        let joiningUsers = [ownUser.name];
+        joiningUsers = joiningUsers.concat(
+          Enumerable.from(allUsers)
+            .where(u => u.is_joined)
+            .select(u => u.name)
+            .toArray()
+        );
+        // 選択ユーザーに招待中フラグを立て、選択を外す
+        users.forEach(u => {
+          u.is_invited = true;
+          u.is_selected = false;
+        });
+        // ウィジェット更新
+        updateWidgets();
+        // 招待を送る
+        const userNames = Enumerable.from(users)
           .select(u => u.name)
-          .toArray()
-      );
-      // 選択ユーザーに招待中フラグを立て、選択を外す
-      users.forEach(u => {
-        u.is_invited = true;
-        u.is_selected = false;
-      });
-      // ウィジェット更新
-      updateWidgets();
-      // 招待を送る
-      const userNames = Enumerable.from(users)
-        .select(u => u.name)
-        .toArray();
-      await sendPushInvite(
-        userNames,
-        ownUser.name,
-        ownClient.talking_room_name,
-        ownClient.talking_client_id,
-        joiningUsers
-      );
-    }
-  });
+          .toArray();
+        await sendPushInvite(
+          userNames,
+          ownUser.name,
+          ownClient.talking_room_name,
+          ownClient.talking_client_id,
+          joiningUsers
+        );
+      }
+    })
+  );
 
   // 通話画面でリクエスト状態をキャンセルした
-  talkingViewWidget.onCancelRequest.connect(async (_, user) => {
-    // 招待中フラグを取り消す
-    user.is_invited = false;
-    // 招待キャンセルを送る
-    await sendPushCancelInvite(
-      user.name,
-      ownUser.name,
-      ownClient.talking_room_name
-    );
-  });
+  talkingViewWidget.onCancelRequest.connect(
+    errorHandler(async (_, user) => {
+      // 招待中フラグを取り消す
+      user.is_invited = false;
+      // 招待キャンセルを送る
+      await sendPushCancelInvite(
+        user.name,
+        ownUser.name,
+        ownClient.talking_room_name
+      );
+    })
+  );
 
   // 画面共有を開始する
   const startSharingDisplay = async () => {
@@ -1167,12 +1223,7 @@ async function initialize(platform: Platform) {
       return false;
     }
     // トラックを差し替える
-    if (
-      !(await sfuClientManager.replaceTalkingChannelVideoTrack(displayTrack))
-    ) {
-      alert('ディスプレイの共有に失敗しました');
-      return false;
-    }
+    await sfuClientManager.replaceTalkingChannelVideoTrack(displayTrack);
     // 通話画面に変更を反映
     ownUser.is_sharing_display = true;
     // ウィジェット更新
@@ -1186,18 +1237,8 @@ async function initialize(platform: Platform) {
   const finishSharingDisplay = async () => {
     // ダミーキャンバストラックを取得
     const dummyCanvasTrack = getDummyCanvasTrack(dummyCanvasWidget);
-    if (!dummyCanvasTrack) {
-      return;
-    }
     // トラックを差し替える
-    if (
-      !(await sfuClientManager.replaceTalkingChannelVideoTrack(
-        dummyCanvasTrack
-      ))
-    ) {
-      alert('ディスプレイの共有停止に失敗しました');
-      return false;
-    }
+    await sfuClientManager.replaceTalkingChannelVideoTrack(dummyCanvasTrack);
     // 通話画面に変更を反映
     ownUser.is_sharing_display = false;
     // ウィジェット更新
@@ -1208,38 +1249,41 @@ async function initialize(platform: Platform) {
       ownClient.talking_room_name,
       false
     );
-    return true;
   };
 
   // 通話画面で画面共有ボタンを押したときの処理
-  talkingViewWidget.onSetSharingDisplay.connect(async (_, isOn) => {
-    if (isOn) {
-      // ミニ通話画面を表示、通話画面を最小化
-      miniTalkingViewWidget.show();
-      miniTalkingViewWidget.update();
-      talkingViewWidget.hideWidget();
-      if (!(await startSharingDisplay())) {
-        // 失敗した場合は通話画面を戻す
-        talkingViewWidget.showWidget();
-        miniTalkingViewWidget.hide();
+  talkingViewWidget.onSetSharingDisplay.connect(
+    errorHandler(async (_, isOn) => {
+      if (isOn) {
+        // ミニ通話画面を表示、通話画面を最小化
+        miniTalkingViewWidget.show();
         miniTalkingViewWidget.update();
+        talkingViewWidget.hideWidget();
+        if (!(await startSharingDisplay())) {
+          // 失敗した場合は通話画面を戻す
+          talkingViewWidget.showWidget();
+          miniTalkingViewWidget.hide();
+          miniTalkingViewWidget.update();
+        }
+        // 画面更新
+        talkingViewWidget.update();
+        miniTalkingViewWidget.update();
+      } else {
+        await finishSharingDisplay();
       }
-      // 画面更新
-      talkingViewWidget.update();
-      miniTalkingViewWidget.update();
-    } else {
-      await finishSharingDisplay();
-    }
-  });
+    })
+  );
 
   // ミニ通話画面で画面共有ボタンを押したときの処理
-  miniTalkingViewWidget.onSetSharingDisplay.connect(async (_, isOn) => {
-    if (isOn) {
-      await startSharingDisplay();
-    } else {
-      await finishSharingDisplay();
-    }
-  });
+  miniTalkingViewWidget.onSetSharingDisplay.connect(
+    errorHandler(async (_, isOn) => {
+      if (isOn) {
+        await startSharingDisplay();
+      } else {
+        await finishSharingDisplay();
+      }
+    })
+  );
 
   // ミュート設定
   const setMute = async (isOn: boolean) => {
@@ -1252,14 +1296,18 @@ async function initialize(platform: Platform) {
   };
 
   // 通話画面でミュート切り替え
-  talkingViewWidget.onSetMute.connect(async (_, isOn) => {
-    await setMute(isOn);
-  });
+  talkingViewWidget.onSetMute.connect(
+    errorHandler(async (_, isOn) => {
+      await setMute(isOn);
+    })
+  );
 
   // ミニ通話画面でミュート切り替え
-  miniTalkingViewWidget.onSetMute.connect(async (_, isOn) => {
-    await setMute(isOn);
-  });
+  miniTalkingViewWidget.onSetMute.connect(
+    errorHandler(async (_, isOn) => {
+      await setMute(isOn);
+    })
+  );
 
   // 通話を切る処理
   const hungUp = async () => {
@@ -1304,54 +1352,96 @@ async function initialize(platform: Platform) {
   };
 
   // 通話画面で切断ボタンを押したときの処理
-  talkingViewWidget.onHungUp.connect(async () => {
-    await hungUp();
-    // 通話画面を閉じる
-    talkingViewWidget.hideWidget();
-  });
+  talkingViewWidget.onHungUp.connect(
+    errorHandler(async () => {
+      await hungUp();
+      // 通話画面を閉じる
+      talkingViewWidget.hideWidget();
+    })
+  );
 
   // ミニ通話画面で切断ボタンを押したときの処理
-  miniTalkingViewWidget.onHungUp.connect(async () => {
-    await hungUp();
-    // ミニ通話画面を閉じる
-    miniTalkingViewWidget.hide();
-    miniTalkingViewWidget.update();
-  });
+  miniTalkingViewWidget.onHungUp.connect(
+    errorHandler(async () => {
+      await hungUp();
+      // ミニ通話画面を閉じる
+      miniTalkingViewWidget.hide();
+      miniTalkingViewWidget.update();
+    })
+  );
 
   // 通話画面で最小化ボタンを押したときの処理
-  talkingViewWidget.onMinimizeTalkingView.connect(() => {
-    miniTalkingViewWidget.show();
-    miniTalkingViewWidget.update();
-    talkingViewWidget.hideWidget();
-  });
+  talkingViewWidget.onMinimizeTalkingView.connect(
+    errorHandler(() => {
+      miniTalkingViewWidget.show();
+      miniTalkingViewWidget.update();
+      talkingViewWidget.hideWidget();
+    })
+  );
 
   // ミニ通話画面で最大化ボタンを押したときの処理
-  miniTalkingViewWidget.onMaximizeTalkingView.connect(async () => {
-    if (ownUser.is_sharing_display) {
-      // 共有中は最大化できないので、共有を停止するか聞く
-      const reply = await dialogWidget.showAskDialog({
-        body: '画面共有中は通話画面を開けません。画面共有を停止して通話画面を開きますか？',
-        subBody1: '',
-        subBody2: '',
-        ok: 'OK',
-        cancel: 'キャンセル'
-      });
-      if (reply) {
-        // ダイアログの確定前に、共有が切られている or 通話が終了している可能性があるのでチェック
-        if (!ownUser.is_sharing_display || ownClient.talking_room_name === '') {
+  miniTalkingViewWidget.onMaximizeTalkingView.connect(
+    errorHandler(async () => {
+      if (ownUser.is_sharing_display) {
+        // 共有中は最大化できないので、共有を停止するか聞く
+        const reply = await dialogWidget.showAskDialog({
+          body: '画面共有中は通話画面を開けません。画面共有を停止して通話画面を開きますか？',
+          subBody1: '',
+          subBody2: '',
+          ok: 'OK',
+          cancel: 'キャンセル'
+        });
+        if (reply) {
+          // ダイアログの確定前に、共有が切られている or 通話が終了している可能性があるのでチェック
+          if (
+            !ownUser.is_sharing_display ||
+            ownClient.talking_room_name === ''
+          ) {
+            return;
+          }
+          // 共有停止
+          await finishSharingDisplay();
+        } else {
+          // キャンセル
           return;
         }
-        // 共有停止
-        await finishSharingDisplay();
-      } else {
-        // キャンセル
-        return;
       }
-    }
-    talkingViewWidget.showWidget();
-    miniTalkingViewWidget.hide();
-    miniTalkingViewWidget.update();
-  });
+      talkingViewWidget.showWidget();
+      miniTalkingViewWidget.hide();
+      miniTalkingViewWidget.update();
+    })
+  );
+
+  // meeting.dev対応
+  const updateSpotlightRids = () => {
+    const updateSpotlightRidsHandler = (timeout: number) => {
+      const myClientId = ownClient.talking_client_id;
+      const joinedUsers = allUsers.filter(user => user.is_joined);
+      const otherClientIdsList = joinedUsers.map(user =>
+        user.clients
+          .filter(client => client.talking_client_id !== '')
+          .map(client => client.talking_client_id)
+      );
+      const otherClientIds = ([] as string[]).concat(...otherClientIdsList);
+      sfuClientManager
+        .changeTakingChannelSpotlightRids(myClientId, otherClientIds)
+        .then(ok => {
+          if (!ok) {
+            // retry after timeout * 2 milliseconds later
+            console.warn(
+              `Failed to change spotlight rid, will retry after ${
+                timeout * 2
+              }ms`
+            );
+            setTimeout(
+              () => updateSpotlightRidsHandler(timeout * 2),
+              timeout * 2
+            );
+          }
+        });
+    };
+    setTimeout(() => updateSpotlightRidsHandler(500), 500);
+  };
 
   // 自身のユーザー情報を初回プッシュ
   await sendPushContact(ownClient, true);

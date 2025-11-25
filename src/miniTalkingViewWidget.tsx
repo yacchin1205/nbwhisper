@@ -4,6 +4,7 @@ import { Signal } from '@lumino/signaling';
 import { User } from './user';
 import { RemoteMedia } from './remoteMedia';
 import Enumerable from 'linq';
+import { errorHandler } from './errorHandler';
 
 // ミニ通話画面ウィジェット
 export class MiniTalkingViewWidget extends ReactWidget {
@@ -65,6 +66,16 @@ export class MiniTalkingViewWidget extends ReactWidget {
   }
 
   render(): JSX.Element {
+    const handleMuteOff = errorHandler(() => this._setMute(false));
+    const handleMuteOn = errorHandler(() => this._setMute(true));
+    const handleStopSharing = errorHandler(() =>
+      this._setSharingDisplay(false)
+    );
+    const handleHungUp = errorHandler(() => this._onHungUp());
+    const handleMaximize = errorHandler(() => this._maximizeTakingView());
+    const handleOpenDisplayArea = errorHandler(() => this._openDisplayArea());
+    const handleCloseDisplayArea = errorHandler(() => this._closeDisplayArea());
+
     return (
       <div>
         <div
@@ -76,32 +87,32 @@ export class MiniTalkingViewWidget extends ReactWidget {
             {this._ownUser.is_mute ? (
               <div
                 className="nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-mute-off-button"
-                onClick={() => this._setMute(false)}
+                onClick={handleMuteOff}
                 title="マイクをオン"
               />
             ) : (
               <div
                 className="nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-mute-on-button"
-                onClick={() => this._setMute(true)}
+                onClick={handleMuteOn}
                 title="マイクをオフ"
               />
             )}
             {this._ownUser.is_sharing_display && (
               <div
                 className="nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-display-off-button"
-                onClick={() => this._setSharingDisplay(false)}
+                onClick={handleStopSharing}
                 title="画面共有を終了"
               />
             )}
             <div
               className="nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-hung-up-button"
-              onClick={() => this._onHungUp()}
+              onClick={handleHungUp}
               title="通話から退出"
             />
             <div className="nbwhisper-mini-talking-view-button empty" />
             <div
               className="nbwhisper-mini-talking-view-button nbwhisper-mini-talking-view-maximize-button"
-              onClick={() => this._maximizeTakingView()}
+              onClick={handleMaximize}
               title="通話画面を表示"
             />
           </div>
@@ -120,7 +131,7 @@ export class MiniTalkingViewWidget extends ReactWidget {
           {!this._isDisplayAreaVisible && (
             <div
               className="nbwhisper-mini-talking-view-display-palette-opener"
-              onClick={() => this._openDisplayArea()}
+              onClick={handleOpenDisplayArea}
               title="共有画面を表示"
             />
           )}
@@ -154,12 +165,12 @@ export class MiniTalkingViewWidget extends ReactWidget {
               <div className="nbwhisper-mini-talking-view-display-palette-buttons">
                 <div
                   className="nbwhisper-mini-talking-view-display-palette-button nbwhisper-mini-talking-view-display-palette-maximize-button"
-                  onClick={() => this._maximizeTakingView()}
+                  onClick={handleMaximize}
                   title="通話画面を表示"
                 />
                 <div
                   className="nbwhisper-mini-talking-view-display-palette-button nbwhisper-mini-talking-view-display-palette-close-button"
-                  onClick={() => this._closeDisplayArea()}
+                  onClick={handleCloseDisplayArea}
                   title="共有画面を隠す"
                 />
               </div>

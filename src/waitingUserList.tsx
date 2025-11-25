@@ -1,6 +1,7 @@
 import React from 'react';
 import { User } from './user';
 import Enumerable from 'linq';
+import { errorHandler } from './errorHandler';
 
 // 待機ユーザーリスト
 export function WaitingUserList({
@@ -30,7 +31,7 @@ export function WaitingUserList({
                   className="nbwhisper-user-list-item"
                   onMouseEnter={() => setHoveringIndex(index)}
                   onMouseLeave={() => setHoveringIndex(-1)}
-                  onClick={() => onSelect(waitingUsers[index])}
+                  onClick={errorHandler(() => onSelect(waitingUsers[index]))}
                 >
                   <span className="nbwhisper-user-list-item-label">
                     {user.name}

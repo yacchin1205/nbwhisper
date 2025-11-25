@@ -31,4 +31,29 @@ class NBWhisper(Configurable):
         True,
         help='share_current_tab_only',
     ).tag(config=True)
+
+    create_access_token_type = Unicode(
+        'sora-cloud',
+        help='create_access_token_type'
+    ).tag(config=True)
+
+    create_access_token_url = Unicode(
+        '',
+        help='create_access_token_url'
+    ).tag(config=True)
+
+    push_channel_type = Unicode(
+        'sora-cloud',
+        help='push_channel_type'
+    ).tag(config=True)
+
+    push_channel_url = Unicode(
+        '',
+        help='push_channel_url'
+    ).tag(config=True)
+
+    change_spotlight_rid_url = Unicode(
+        '',
+        help='change_spotlight_rid_url'
+    ).tag(config=True)
     
